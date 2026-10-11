@@ -40,7 +40,7 @@ O painel expõe visão geral, portas, SFP+, dispositivos, VLANs (estado pendente
 - Informações gerais publicadas: 3600 segundos. Como `/info.cgi` também fornece os estados das portas, ele é consultado a cada ciclo rápido.
 - IEEE OUI: arquivo em cache persistente e verificação de atualização após 30 dias, no início da integração.
 
-Todos os equipamentos são detectados dinamicamente. Não existem nomes predefinidos ODI/Cudy, VLANs fixas, IPs da rede do desenvolvedor, valores SFP simulados em produção ou dependência de um modelo de 10 portas.
+A integração descobre automaticamente as interfaces e os recursos disponíveis em cada equipamento compatível.
 
 ## Privacidade e segurança
 
