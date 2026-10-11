@@ -19,7 +19,7 @@ FIELDS = {
 async def async_setup_entry(hass, entry, async_add_entities):
     c = hass.data[DOMAIN][entry.entry_id]
     entities = [OracoSensor(c, n, k) for n in c.data["ports"] for k in FIELDS]
-    entities += [OracoSensor(c, None, key) for key in ("model", "firmware", "uptime", "mac", "ports_up")]
+    entities += [OracoSensor(c, None, key) for key in ("model", "firmware", "uptime", "mac", "ports_up", "mac_current", "mac_known", "mac_local", "sfp_temperature", "sfp_voltage", "sfp_current", "sfp_rx_dbm", "sfp_tx_dbm")]
     async_add_entities(entities)
 
 
@@ -36,6 +36,18 @@ class OracoSensor(CoordinatorEntity, SensorEntity):
         self._attr_name = name
         self._attr_native_unit_of_measurement = unit
         self._attr_state_class = state_class
+        optics = {
+            "sfp_temperature": ("SFP temperature", "°C", SensorDeviceClass.TEMPERATURE),
+            "sfp_voltage": ("SFP voltage", "V", SensorDeviceClass.VOLTAGE),
+            "sfp_current": ("SFP current", "mA", SensorDeviceClass.CURRENT),
+            "sfp_rx_dbm": ("SFP RX power", "dBm", None),
+            "sfp_tx_dbm": ("SFP TX power", "dBm", None),
+        }
+        if key in optics:
+            self._attr_name, self._attr_native_unit_of_measurement, device_cls = optics[key]
+            self._attr_state_class = SensorStateClass.MEASUREMENT
+            if device_cls is not None:
+                self._attr_device_class = device_cls
         if key in ("rx_bytes", "tx_bytes"):
             self._attr_device_class = SensorDeviceClass.DATA_SIZE
 
@@ -43,6 +55,12 @@ class OracoSensor(CoordinatorEntity, SensorEntity):
     def native_value(self):
         data = self.coordinator.data
         if self.port is None:
+            if self.key in ("mac_current", "mac_known", "mac_local"):
+                return data.get("mac", {}).get(self.key)
+            if self.key.startswith("sfp_"):
+                fields = {"sfp_temperature": "temperature_c", "sfp_voltage": "voltage_v",
+                          "sfp_current": "current_ma", "sfp_rx_dbm": "rx_dbm", "sfp_tx_dbm": "tx_dbm"}
+                return data.get("sfp", {}).get("sfp", {}).get(fields.get(self.key))
             if self.key == "ports_up":
                 return sum(p["up"] for p in data["ports"].values())
             return data["device"].get(self.key)
