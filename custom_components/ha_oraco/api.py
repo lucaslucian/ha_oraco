@@ -67,6 +67,25 @@ class HoracoClient:
             raise SwitchError("Authentication expired")
 
 
+    async def mac_page(self, page: int) -> str:
+        """Pagination-only CGI form, not a switch configuration change."""
+        if not 2 <= page <= 100:
+            raise SwitchError("Invalid MAC table page")
+        async with self.lock:
+            if not self.logged_in:
+                await self._login()
+            await asyncio.sleep(0.4)
+            async with self.session.post(
+                self.base + "/mac.cgi?page=fwd_tbl",
+                data={"cmd": "goto", "pageidx": str(page), "perpage": "3"},
+                cookies=self.cookie, allow_redirects=False,
+                timeout=aiohttp.ClientTimeout(total=12),
+            ) as response:
+                if response.status != 200:
+                    raise SwitchError(f"MAC pagination HTTP {response.status}")
+                return await response.text(errors="replace")
+
+
 def _value(cell):
     return cell.get_text(" ", strip=True)
 
@@ -147,21 +166,3 @@ def parse_stats(html: str) -> dict:
             result[match.group(1)] = item
         return result
     return {}
-
-    async def mac_page(self, page: int) -> str:
-        """Pagination-only CGI form, not a switch configuration change."""
-        if not 2 <= page <= 100:
-            raise SwitchError("Invalid MAC table page")
-        async with self.lock:
-            if not self.logged_in:
-                await self._login()
-            await asyncio.sleep(0.4)
-            async with self.session.post(
-                self.base + "/mac.cgi?page=fwd_tbl",
-                data={"cmd": "goto", "pageidx": str(page), "perpage": "3"},
-                cookies=self.cookie, allow_redirects=False,
-                timeout=aiohttp.ClientTimeout(total=12),
-            ) as response:
-                if response.status != 200:
-                    raise SwitchError(f"MAC pagination HTTP {response.status}")
-                return await response.text(errors="replace")
