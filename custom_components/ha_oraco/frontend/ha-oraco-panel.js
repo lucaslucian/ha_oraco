@@ -71,7 +71,7 @@ class HaOracoPanel extends HTMLElement {
     this.shadowRoot.innerHTML = `<style>
       :host { display:block; min-height:100%; color:var(--primary-text-color); background:var(--primary-background-color); font-family:Roboto,"Arial",sans-serif; }
       *{box-sizing:border-box} main{max-width:1480px;margin:auto;padding:24px;} header{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:22px}
-      h1{font-size:24px;font-weight:500;margin:0}h2{font-size:19px;font-weight:500;margin:0}h3{font-size:15px;font-weight:500;margin:0 0 18px}
+      .brand{display:flex;align-items:center;gap:12px}.brand img{width:38px;height:38px;object-fit:contain} h1{font-size:24px;font-weight:500;margin:0}h2{font-size:19px;font-weight:500;margin:0}h3{font-size:15px;font-weight:500;margin:0 0 18px}
       nav{display:flex;gap:6px;overflow-x:auto;border-bottom:1px solid var(--divider-color);margin-bottom:24px}
       button{font:inherit;cursor:pointer;background:transparent;color:var(--secondary-text-color);border:0;border-bottom:2px solid transparent;padding:13px 15px;white-space:nowrap}
       button.selected{color:var(--primary-color);border-color:var(--primary-color)}button:hover{color:var(--primary-text-color)}
@@ -85,7 +85,7 @@ class HaOracoPanel extends HTMLElement {
       .dot{display:inline-block;width:8px;height:8px;background:var(--disabled-text-color);border-radius:50%;margin-right:8px}.dot.ok{background:var(--success-color,#4caf50)}
       input[type=search]{width:100%;padding:12px 14px;border:1px solid var(--divider-color);border-radius:8px;background:var(--secondary-background-color);color:var(--primary-text-color);margin-bottom:12px} .kv{display:flex;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--divider-color);gap:15px}.kv span{color:var(--secondary-text-color)}
       @media(max-width:950px){.stats{grid-template-columns:repeat(2,minmax(0,1fr))}.columns{grid-template-columns:1fr}}@media(max-width:500px){main{padding:14px}.stats{gap:8px}.card{padding:14px}.metric strong{font-size:20px}}
-    </style><main><header><h1>HoraInfo</h1><button class="refresh" id="refresh">Atualizar</button></header>
+    </style><main><header><h1 class="brand"><img src="/ha_oraco_static/brand/icon.svg" alt="" aria-hidden="true"/> HoraInfo</h1><button class="refresh" id="refresh">Atualizar</button></header>
     <nav>${tabs.map(([id,label])=>'<button data-tab="'+id+'" class="'+(id===this.tab?"selected":"")+'">'+label+'</button>').join("")}</nav>
     ${body}</main>`;
     this.shadowRoot.querySelectorAll("[data-tab]").forEach(el => el.addEventListener("click", () => {this.tab=el.dataset.tab;this.render()}));
