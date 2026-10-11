@@ -1,19 +1,238 @@
+# HA Oraco | Dashboard Lovelace nativo
+# Requer Home Assistant com suporte a cards Tile e Heading.
+# Este arquivo e uma dashboard MANUAL, nao e registrado automaticamente pela integracao.
+# Substitua os entity_ids conforme os nomes criados na sua instalacao.
+# Blocos SFP+ e VLAN sao exemplos para quando as entidades estiverem implementadas.
 title: HA Oraco
 views:
-  - title: Horaco
-    path: horaco
-    icon: mdi:lan
-    cards:
-      - type: entities
-        title: Informações do switch
-        entities:
-          - sensor.horaco_model
-          - sensor.horaco_firmware
-          - sensor.horaco_uptime
-          - sensor.horaco_ports_up
-      - type: history-graph
-        title: Tráfego da porta 1
-        hours_to_show: 12
-        entities:
-          - sensor.port_1_rx_rate
-          - sensor.port_1_tx_rate
+  - title: Visao geral
+    path: visao-geral
+    icon: mdi:view-dashboard-outline
+    type: sections
+    max_columns: 3
+    sections:
+      - type: grid
+        cards:
+          - type: heading
+            heading: Estado da rede
+            heading_style: title
+            icon: mdi:lan
+          - type: tile
+            entity: sensor.horaco_ports_up
+            name: Portas conectadas
+            icon: mdi:lan-connect
+            color: green
+          - type: tile
+            entity: sensor.horaco_uptime
+            name: Tempo em operacao
+            icon: mdi:timer-outline
+          - type: markdown
+            content: >-
+              **Monitoramento** · 30 s para portas e trafego
+
+              Controle exclusivamente em leitura. Nenhuma configuracao do switch
+              e alterada por este painel.
+      - type: grid
+        cards:
+          - type: heading
+            heading: Trafego principal
+            heading_style: title
+            icon: mdi:chart-line
+          - type: tile
+            entity: sensor.port_1_rx_rate
+            name: Porta 1 · Entrada
+            icon: mdi:download-network-outline
+          - type: tile
+            entity: sensor.port_1_tx_rate
+            name: Porta 1 · Saida
+            icon: mdi:upload-network-outline
+          - type: history-graph
+            title: Porta 1 · ultimas 6 horas
+            hours_to_show: 6
+            refresh_interval: 30
+            entities:
+              - entity: sensor.port_1_rx_rate
+                name: RX
+              - entity: sensor.port_1_tx_rate
+                name: TX
+      - type: grid
+        cards:
+          - type: heading
+            heading: Fibra e SFP+
+            heading_style: title
+            icon: mdi:ethernet
+          - type: markdown
+            content: >-
+              **Diagnostico optico**
+
+              Os campos de potencia RX/TX, temperatura, tensao e corrente
+              aparecerao quando a leitura SFP+ estiver implementada e
+              validada no firmware. Nenhum valor sera simulado.
+          - type: heading
+            heading: Acesso rapido
+            heading_style: subtitle
+          - type: markdown
+            content: >-
+              [Portas](./portas) · [SFP+](./sfp) ·
+              [Dispositivos](./dispositivos) · [VLANs](./vlans) ·
+              [Sistema](./sistema)
+
+  - title: Portas
+    path: portas
+    icon: mdi:lan-connect
+    type: sections
+    max_columns: 2
+    sections:
+      - type: grid
+        cards:
+          - type: heading
+            heading: Interfaces
+            heading_style: title
+          - type: entities
+            title: Porta 1
+            entities:
+              - entity: binary_sensor.port_1_link
+                name: Link
+              - entity: sensor.port_1_speed
+                name: Velocidade negociada
+              - entity: sensor.port_1_duplex
+                name: Duplex
+              - entity: sensor.port_1_rx_rate
+                name: Entrada
+              - entity: sensor.port_1_tx_rate
+                name: Saida
+          - type: markdown
+            content: >-
+              **Outras portas**
+
+              Duplique o card da porta 1 e ajuste os identificadores das
+              demais portas. O numero de portas depende do modelo instalado.
+      - type: grid
+        cards:
+          - type: heading
+            heading: Contadores e historico
+            heading_style: title
+          - type: entities
+            title: Porta 1 · contadores
+            entities:
+              - entity: sensor.port_1_rx_bytes
+                name: Bytes recebidos
+              - entity: sensor.port_1_tx_bytes
+                name: Bytes transmitidos
+              - entity: sensor.port_1_rx_packets
+                name: Pacotes recebidos
+              - entity: sensor.port_1_tx_packets
+                name: Pacotes transmitidos
+          - type: history-graph
+            title: Trafego da porta 1
+            hours_to_show: 24
+            refresh_interval: 30
+            entities:
+              - sensor.port_1_rx_rate
+              - sensor.port_1_tx_rate
+
+  - title: SFP+
+    path: sfp
+    icon: mdi:fiber-optic
+    type: sections
+    sections:
+      - type: grid
+        cards:
+          - type: heading
+            heading: Modulos opticos
+            heading_style: title
+          - type: markdown
+            content: >-
+              **Diagnostico SFP+ — aguardando coleta**
+
+              Assim que validarmos o endpoint do firmware, esta aba exibira,
+              por modulo, a temperatura, a potencia RX/TX (dBm), tensao,
+              corrente, tipo de transceptor e alarmes de sinal.
+
+              Os valores precisam vir do switch. Esta versao nao fornece
+              entidades opticas e nao apresenta dados ficticios.
+
+  - title: Dispositivos
+    path: dispositivos
+    icon: mdi:devices
+    type: sections
+    sections:
+      - type: grid
+        cards:
+          - type: heading
+            heading: Inventario MAC
+            heading_style: title
+          - type: markdown
+            content: >-
+              **Tabela MAC, VLAN e fabricante**
+
+              O modulo de parsing e cache do inventario esta em
+              desenvolvimento. A exibicao automatica da tabela completa,
+              fabricante por OUI, primeira/ultima deteccao e mudancas de
+              porta sera incluida apos integracao com o coordenador.
+
+              Um MAC localmente administrado sera identificado como
+              **MAC local/privado**, sem afirmar que foi aleatorizado.
+
+  - title: VLANs
+    path: vlans
+    icon: mdi:layers-triple-outline
+    type: sections
+    sections:
+      - type: grid
+        cards:
+          - type: heading
+            heading: Segmentacao
+            heading_style: title
+          - type: markdown
+            content: >-
+              **VLANs e isolamento de portas**
+
+              Informacoes planejadas: VLAN ID, participacao de portas,
+              tagged/untagged, PVID e port isolation, quando disponibilizadas
+              pela interface do modelo.
+
+              **Modo leitura.** Nenhum controle de alteracao de VLAN foi
+              habilitado.
+
+  - title: Sistema
+    path: sistema
+    icon: mdi:cog-outline
+    type: sections
+    sections:
+      - type: grid
+        cards:
+          - type: heading
+            heading: Equipamento
+            heading_style: title
+          - type: entities
+            title: Informacoes gerais
+            entities:
+              - entity: sensor.horaco_model
+                name: Modelo
+              - entity: sensor.horaco_firmware
+                name: Firmware
+              - entity: sensor.horaco_mac
+                name: MAC do switch
+              - entity: sensor.horaco_uptime
+                name: Uptime
+              - entity: sensor.horaco_ports_up
+                name: Portas ativas
+      - type: grid
+        cards:
+          - type: heading
+            heading: Atualizacoes
+            heading_style: title
+          - type: markdown
+            content: |
+              | Grupo | Intervalo |
+              |:--|--:|
+              | Portas e trafego | 30 s |
+              | Diagnostico optico | 60 s (pendente) |
+              | Tabela MAC | 2 min (pendente) |
+              | IGMP / DHCP Snooping | 5 min (pendente) |
+              | VLANs / isolamento | 10 min (pendente) |
+              | Informacoes gerais | 1 hora |
+
+              Os intervalos dos modulos pendentes nao representam
+              coleta ativa nesta versao.
