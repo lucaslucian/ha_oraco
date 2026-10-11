@@ -1,19 +1,19 @@
 {
   "domain": "ha_oraco",
   "name": "HA Oraco",
-  "version": "0.4.0",
-  "config_flow": true,
-  "documentation": "https://github.com/lucaslucian/ha_oraco",
-  "issue_tracker": "https://github.com/lucaslucian/ha_oraco/issues",
-  "integration_type": "device",
-  "iot_class": "local_polling",
-  "requirements": [
-    "beautifulsoup4>=4.12.0"
-  ],
   "codeowners": [],
+  "config_flow": true,
   "dependencies": [
     "frontend",
     "http",
     "websocket_api"
-  ]
+  ],
+  "documentation": "https://github.com/lucaslucian/ha_oraco",
+  "integration_type": "device",
+  "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/lucaslucian/ha_oraco/issues",
+  "requirements": [
+    "beautifulsoup4>=4.12.0"
+  ],
+  "version": "0.4.0"
 }
