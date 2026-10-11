@@ -2,6 +2,9 @@ name: Offline validation
 on:
   push:
   pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
 jobs:
   parsers-and-frontend:
     runs-on: ubuntu-latest
@@ -10,10 +13,34 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: python -m pip install beautifulsoup4 pytest
-      - run: python -m compileall -q custom_components/ha_oraco
-      - run: python -m pytest -q tests/
+      - name: Install test dependencies
+        run: python -m pip install beautifulsoup4 pytest
+      - name: Check Python syntax
+        run: python -m compileall -q custom_components/ha_oraco devtools tests
+      - name: Test parsers and simulator
+        run: python -m pytest -q tests/
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - run: node --check custom_components/ha_oraco/frontend/ha-oraco-panel.js
+      - name: Check dashboard JavaScript syntax
+        run: node --check custom_components/ha_oraco/frontend/ha-oraco-panel.js
+      - name: Validate manifest and translations JSON
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          for p in Path("custom_components/ha_oraco").rglob("*.json"):
+              json.loads(p.read_text(encoding="utf-8"))
+              print(f"OK: {p}")
+          PY
+  hassfest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: home-assistant/actions/hassfest@master
+  hacs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: hacs/action@main
+        with:
+          category: integration
