@@ -1,0 +1,19 @@
+title: HA Oraco
+views:
+  - title: Horaco
+    path: horaco
+    icon: mdi:lan
+    cards:
+      - type: entities
+        title: Informações do switch
+        entities:
+          - sensor.horaco_model
+          - sensor.horaco_firmware
+          - sensor.horaco_uptime
+          - sensor.horaco_ports_up
+      - type: history-graph
+        title: Tráfego da porta 1
+        hours_to_show: 12
+        entities:
+          - sensor.port_1_rx_rate
+          - sensor.port_1_tx_rate
