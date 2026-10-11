@@ -39,3 +39,28 @@ Não existem métodos de reiniciar, alterar portas, aplicar VLAN, fazer reset ou
 ## Créditos
 
 Inspirado pelo [horaco_switch_ha](https://github.com/gtrancillo/horaco_switch_ha) e pelo [switch-dashboard](https://github.com/byte4geek/switch-dashboard). Esta implementação inicial é independente, sem copiar diretamente seus arquivos. O projeto foi desenvolvido com auxílio de IA.
+
+
+## Dashboard Lovelace
+
+O arquivo [dashboard/horaco.yaml](dashboard/horaco.yaml) contem seis abas com cards
+nativos do Home Assistant: **Visao geral, Portas, SFP+, Dispositivos, VLANs e Sistema**.
+O painel acompanha o tema selecionado no Home Assistant (recomendamos o escuro padrao).
+Nao ha dependencia de custom cards.
+
+**Como usar:** crie uma nova dashboard pelo Home Assistant, abra o editor de
+configuracao YAML da dashboard e substitua o conteudo pelo arquivo
+`dashboard/horaco.yaml`. Faca backup da configuracao anterior antes de substituir.
+Se a sua instalacao usa YAML em arquivo, pode usar o conteudo como fonte de uma
+dashboard configurada manualmente.
+
+**Ajuste necessario:** os identificadores `sensor.horaco_...` e
+`sensor.port_1_...` sao exemplos. O Home Assistant pode gerar identificadores
+diferentes conforme nomes dos dispositivos e entidades; substitua-os pelos nomes
+reais em **Ferramentas do desenvolvedor → Estados**. O painel inclui apenas
+uma porta de referencia: duplique seus cards para as portas existentes no seu modelo.
+
+Os cards de SFP+, MAC e VLANs sao estados vazios explicativos ate que os sensores
+correspondentes estejam integrados. O arquivo YAML **nao e instalado automaticamente**
+pela integracao HACS. A implementacao de um painel configurado automaticamente
+e uma etapa futura.
