@@ -2,7 +2,7 @@
 
 Integração HACS **somente leitura** para switches Horaco/OEM compatíveis com a interface CGI Realtek.
 
-## Estado: versão inicial 0.1.0 (experimental)
+## Estado: versão 0.2.0 (experimental)
 
 **Já implementado:** cadastro pelo fluxo de configuração, login HTTP, descoberta de portas por `/info.cgi`, velocidade/link/duplex, contadores de bytes e pacotes quando presentes na página, cálculo RX/TX em bit/s com base nos contadores reais, sensores nativos, informações de firmware/modelo/uptime e atualização operacional a cada 30 segundos. Um dispositivo pai representa o switch e dispositivos filhos representam as portas.
 
@@ -41,7 +41,13 @@ Não existem métodos de reiniciar, alterar portas, aplicar VLAN, fazer reset ou
 Inspirado pelo [horaco_switch_ha](https://github.com/gtrancillo/horaco_switch_ha) e pelo [switch-dashboard](https://github.com/byte4geek/switch-dashboard). Esta implementação inicial é independente, sem copiar diretamente seus arquivos. O projeto foi desenvolvido com auxílio de IA.
 
 
-## Dashboard Lovelace
+## Painel integrado na barra lateral
+
+A partir da versao experimental **0.2.0**, a integracao registra um painel proprio na barra lateral do Home Assistant, chamado **HA Oraco**. O painel usa cores e variaveis do tema nativo (incluindo o tema escuro), sem depender de uma dashboard YAML nem de cards personalizados. As abas sao Visao geral, Portas, SFP+, Dispositivos, VLANs e Sistema. A comunicacao ocorre via WebSocket do HA usando o cache ja coletado, sem novas consultas diretas ao switch. O painel sera mostrado apos carregar a integracao e recarregar a interface.
+
+**Limites atuais:** portas e indicadores RX/TX sao exibidos a partir dos dados coletados. As abas SFP+, Dispositivos e VLANs exibem placeholders ate que os seus coletores estejam ligados ao coordenador. A comunicacao e o registro do painel ainda precisam de validacao real no HA; esta versao nao deve ser tratada como estavel.
+
+## Dashboard Lovelace (alternativa manual)
 
 O arquivo [dashboard/horaco.yaml](dashboard/horaco.yaml) contem seis abas com cards
 nativos do Home Assistant: **Visao geral, Portas, SFP+, Dispositivos, VLANs e Sistema**.
