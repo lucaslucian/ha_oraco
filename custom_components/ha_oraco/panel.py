@@ -27,6 +27,7 @@ async def dashboard_data(hass, connection, msg):
             "mac": data.get("mac", {}),
             "topology": data.get("topology", {}),
             "network": data.get("network", {}),
+            "diagnostics": data.get("diagnostics", {}),
         })
     connection.send_result(msg["id"], {"switches": switches})
 
@@ -50,6 +51,6 @@ async def register_panel(hass):
             "embed_iframe": False,
             "trust_external": False,
         }},
-        require_admin=False,
+        require_admin=True,
     )
     hass.data[DOMAIN]["_panel_registered"] = True
