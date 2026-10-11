@@ -1,7 +1,7 @@
 {
   "domain": "ha_oraco",
   "name": "HA Oraco",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "config_flow": true,
   "documentation": "https://github.com/lucaslucian/ha_oraco",
   "issue_tracker": "https://github.com/lucaslucian/ha_oraco/issues",
@@ -10,5 +10,10 @@
   "requirements": [
     "beautifulsoup4>=4.12.0"
   ],
-  "codeowners": []
+  "codeowners": [],
+  "dependencies": [
+    "frontend",
+    "http",
+    "websocket_api"
+  ]
 }
