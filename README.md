@@ -1,95 +1,76 @@
 # HA Oraco
 
-Integração HACS **somente leitura** para switches Horaco/OEM compatíveis com a interface CGI Realtek.
+Integração experimental **somente leitura** para monitorar switches Horaco e OEM com interface CGI Realtek no Home Assistant. A integração usa HACS e registra um painel na barra lateral, sem Docker ou Lovelace customizado.
 
-## Estado: versão 0.2.0 (experimental)
+## Estado do desenvolvimento (0.4.0-dev)
 
-**Já implementado:** cadastro pelo fluxo de configuração, login HTTP, descoberta de portas por `/info.cgi`, velocidade/link/duplex, contadores de bytes e pacotes quando presentes na página, cálculo RX/TX em bit/s com base nos contadores reais, sensores nativos, informações de firmware/modelo/uptime e atualização operacional a cada 30 segundos. Um dispositivo pai representa o switch e dispositivos filhos representam as portas.
+| Função | Implementação | Requer validação no switch |
+|---|---|---|
+| Portas, link, duplex, RX/TX e taxas | Sim | Sim |
+| Painel integrado, visual escuro/claro | Sim | Teste real no HA |
+| MAC table, múltiplas páginas e histórico | Sim | Sim |
+| Classificação MAC local/privado | Sim | Testável offline |
+| Fabricante OUI (IEEE MA-L/M/S) | Sim, cache local e atualização quando necessário | Teste de download no HA |
+| Topologia MAC por porta | Sim, modelo lógico | Sim |
+| SFP DDMI (RX, TX, temperatura e tensão) | Sim, parser do firmware de referência | Sim |
+| IGMP e DHCP Snooping | Sim | Sim |
+| Jumbo Frames | Sim | Sim |
+| VLAN/PVID/Port Isolation completos | Não | Precisa identificar endpoints |
+| Alertas sofisticados e limites ópticos | Não | Exigem limiares do módulo |
+| Mapa visual arrastável / LLDP | Não | LLDP depende de suporte real |
+| Configuração do switch | Não | Não está prevista nesta fase |
 
-**Ainda não implementado:** tabela MAC, VLANs, Port Isolation, IGMP/DHCP Snooping, dados ópticos SFP+, dashboards avançados e atualização manual. Esses recursos exigem identificar e validar os endpoints de **consulta** específicos do firmware. Não foram criados dados fictícios.
+O painel expõe visão geral, portas, SFP+, dispositivos, VLANs (estado pendente), mapa lógico e sistema. O grafo MAC demonstra **aprendizado na porta**, não a conexão física direta. Não representa hosts atrás de NAT individualmente.
 
-## Instalação via HACS
+## Instalação
 
-1. HACS → menu de três pontos → **Repositórios personalizados**.
-2. Adicione `https://github.com/lucaslucian/ha_oraco` como categoria **Integração**.
-3. Instale **HA Oraco**, reinicie o Home Assistant.
-4. Configurações → Dispositivos e serviços → Adicionar integração → **HA Oraco**.
-5. Informe IP, porta HTTP, usuário e senha do switch.
+1. HACS → Repositórios personalizados → adicionar `https://github.com/lucaslucian/ha_oraco` como **Integração**.
+2. Instalar, reiniciar o Home Assistant.
+3. Configurações → Dispositivos e serviços → Adicionar integração → **HA Oraco**.
+4. Informar host, porta HTTP, usuário e senha.
+5. Após configurar, verificar a entrada **HA Oraco** na barra lateral. O painel detalhado exige usuário administrador.
 
-O HA precisa acessar a interface web do switch. **Use uma rede local confiável**: a interface original de muitos modelos utiliza HTTP sem criptografia.
+## Atualização e coleta
 
-## Frequências previstas
+- Portas, tráfego: 30 segundos (ajustável no fluxo de opções).
+- Transceptores: 60 segundos.
+- Tabela MAC: 120 segundos.
+- DHCP/IGMP: 300 segundos.
+- Jumbo frames: 3600 segundos.
+- Informações gerais publicadas: 3600 segundos. Como `/info.cgi` também fornece os estados das portas, ele é consultado a cada ciclo rápido.
+- IEEE OUI: arquivo em cache persistente e verificação de atualização após 30 dias, no início da integração.
 
-| Dados | Intervalo desejado | Situação |
-|---|---:|---|
-| Link, velocidade e tráfego | 30 segundos | Implementado, configurável 15–300 s |
-| SFP+ | 60 segundos | Pendente de endpoint |
-| Tabela MAC | 2 minutos | Pendente de endpoint |
-| IGMP/DHCP snooping | 5 minutos | Pendente de endpoint |
-| VLANs e port isolation | 10 minutos | Pendente de endpoint |
-| Informações gerais publicadas | 1 hora | Implementado (compartilha /info.cgi com links) |
-| Modelo, firmware | 6 horas | Planejado cache separado |
+Todos os equipamentos são detectados dinamicamente. Não existem nomes predefinidos ODI/Cudy, VLANs fixas, IPs da rede do desenvolvedor, valores SFP simulados em produção ou dependência de um modelo de 10 portas.
 
-**Importante:** /info.cgi também contém o estado das portas, portanto o HTML é lido a cada 30 s; apenas a publicação de metadados é desacelerada. O suporte efetivo depende de compatibilidade com o firmware, ainda não testada no seu equipamento.
+## Privacidade e segurança
 
-## Segurança
+- Nenhum endpoint de alteração de VLAN, reset, atualização, reboot ou controle administrativo.
+- O cliente usa GET nas rotas de monitoramento aprovadas. POST ocorre somente em login e paginação de leitura da tabela MAC.
+- Painel e WebSocket restritos a administradores.
+- O inventário MAC (até 2.000 identidades por switch) é armazenado localmente; não é enviado à IEEE. O download de registros IEEE é separado das consultas MAC.
+- MAC com bit local é rotulado **MAC local/privado**, não necessariamente aleatorizado.
+- O diagnóstico exportável omite credenciais e endereços MAC. O equipamento pode usar HTTP sem TLS; utilize somente em rede confiável.
+- A recuperação da sessão depende do firmware. Não exponha a interface de administração do switch à internet.
 
-Não existem métodos de reiniciar, alterar portas, aplicar VLAN, fazer reset ou atualizar firmware. Apenas o login exige POST, e o restante da coleta utiliza GET nas rotas explicitamente permitidas. Credenciais são armazenadas na configuração da integração pelo Home Assistant. A conta do switch pode continuar tendo permissões administrativas; somente o código da integração é read-only.
+## Testes sem hardware
 
-## Créditos
+```bash
+python -m pip install beautifulsoup4 pytest
+python -m compileall -q custom_components/ha_oraco
+python -m pytest -q tests/
+node --check custom_components/ha_oraco/frontend/ha-oraco-panel.js
+```
 
-Inspirado pelo [horaco_switch_ha](https://github.com/gtrancillo/horaco_switch_ha) e pelo [switch-dashboard](https://github.com/byte4geek/switch-dashboard). Esta implementação inicial é independente, sem copiar diretamente seus arquivos. O projeto foi desenvolvido com auxílio de IA.
+Simulador local:
 
+```bash
+python devtools/mock_switch.py --ports 10 --port 8089
+```
 
-## Painel integrado na barra lateral
+O simulador atende `127.0.0.1:8089` com HTML de referência e não modifica equipamentos. Para conectar a partir do HA em contêiner será necessário configurar um host acessível **somente na rede de testes**. O simulador é de desenvolvimento; não replica todas as peculiaridades dos firmwares.
 
-A partir da versao experimental **0.2.0**, a integracao registra um painel proprio na barra lateral do Home Assistant, chamado **HA Oraco**. O painel usa cores e variaveis do tema nativo (incluindo o tema escuro), sem depender de uma dashboard YAML nem de cards personalizados. As abas sao Visao geral, Portas, SFP+, Dispositivos, VLANs e Sistema. A comunicacao ocorre via WebSocket do HA usando o cache ja coletado, sem novas consultas diretas ao switch. O painel sera mostrado apos carregar a integracao e recarregar a interface.
+## Referências e créditos
 
-**Limites atuais:** portas e indicadores RX/TX sao exibidos a partir dos dados coletados. As abas SFP+, Dispositivos e VLANs exibem placeholders ate que os seus coletores estejam ligados ao coordenador. A comunicacao e o registro do painel ainda precisam de validacao real no HA; esta versao nao deve ser tratada como estavel.
+Inspirado em [switch-dashboard](https://github.com/byte4geek/switch-dashboard) e [horaco_switch_ha](https://github.com/gtrancillo/horaco_switch_ha). Código desenvolvido com assistência de IA.
 
-## Dashboard Lovelace (alternativa manual)
-
-O arquivo [dashboard/horaco.yaml](dashboard/horaco.yaml) contem seis abas com cards
-nativos do Home Assistant: **Visao geral, Portas, SFP+, Dispositivos, VLANs e Sistema**.
-O painel acompanha o tema selecionado no Home Assistant (recomendamos o escuro padrao).
-Nao ha dependencia de custom cards.
-
-**Como usar:** crie uma nova dashboard pelo Home Assistant, abra o editor de
-configuracao YAML da dashboard e substitua o conteudo pelo arquivo
-`dashboard/horaco.yaml`. Faca backup da configuracao anterior antes de substituir.
-Se a sua instalacao usa YAML em arquivo, pode usar o conteudo como fonte de uma
-dashboard configurada manualmente.
-
-**Ajuste necessario:** os identificadores `sensor.horaco_...` e
-`sensor.port_1_...` sao exemplos. O Home Assistant pode gerar identificadores
-diferentes conforme nomes dos dispositivos e entidades; substitua-os pelos nomes
-reais em **Ferramentas do desenvolvedor → Estados**. O painel inclui apenas
-uma porta de referencia: duplique seus cards para as portas existentes no seu modelo.
-
-Os cards de SFP+, MAC e VLANs sao estados vazios explicativos ate que os sensores
-correspondentes estejam integrados. O arquivo YAML **nao e instalado automaticamente**
-pela integracao HACS. A implementacao de um painel configurado automaticamente
-e uma etapa futura.
-
-
-## 0.3.0 — endpoints conhecidos e topologia lógica
-
-Esta versão acrescenta **consulta somente leitura**, com coleta escalonada e falha isolada, para os seguintes endpoints documentados no switch-dashboard:
-
-| Endpoint | Coleta | Intervalo | Observação |
-|---|---|---:|---|
-| `/info.cgi` | Portas, equipamento | 30 s | Existente |
-| `/port.cgi?page=stats` | Contadores RX/TX | 30 s | Existente |
-| `/transceiver.cgi` | DDMI/diagnóstico SFP+ | 60 s | Dependente do firmware |
-| `/mac.cgi?page=fwd_tbl` | Tabela MAC | 120 s | Paginação por POST `goto`, sem alterar configuração |
-| `/dhcp_snooping.cgi?page=dump` | DHCP snooping, portas trusted | 300 s | Dependente do firmware |
-| `/igmp.cgi?page=dump` | IGMP snooping, grupos | 300 s | Dependente do firmware |
-| `/fwd.cgi?page=jumboframe` | Jumbo frames | 3600 s | Dependente do firmware |
-
-A topologia é gerada a partir do conjunto **switch → portas → MACs observados**, com informação sobre VLAN e tipo de MAC. **Ela não comprova ligações físicas intermediárias**, e não identifica dispositivos atrás de NAT. O painel oferece a aba *Mapa de rede* mostrando a contagem de MACs por porta nesta etapa.
-
-A identidade do fabricante por OUI tem o módulo `vendors.py`, mas o agendamento de download da base IEEE e a ligação do fabricante ao inventário **ainda não estão concluídos**. Da mesma forma, VLAN/PVID/port isolation detalhados exigem endpoints de leitura do firmware ainda não confirmados; não se deve inventar seus valores.
-
-**Testes possíveis sem hardware:** parser de HTML conhecido, conversão DDMI, algoritmo de grafo, limitação do histórico e validação de estruturas. **Ainda não testado no Horaco:** respostas reais do seu modelo, paginação da tabela MAC, desempenho dos endpoints, estabilidade do login e leitura SFP+. O projeto permanece experimental.
-
-Referências: [switch-dashboard](https://github.com/byte4geek/switch-dashboard), [horaco_switch_ha](https://github.com/gtrancillo/horaco_switch_ha).
+**Atenção:** código disponibilizado para testes, sem homologação num Horaco real. Os parsers e o painel precisam de validação no Home Assistant antes de considerar o projeto estável.
