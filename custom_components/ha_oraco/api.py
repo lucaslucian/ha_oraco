@@ -43,7 +43,7 @@ class HoracoClient:
 
     async def get(self, path: str) -> str:
         """Only permit the three audited, read-only CGI routes."""
-        if path not in ("/info.cgi", "/port.cgi", "/port.cgi?page=stats"):
+        if path not in ("/info.cgi", "/port.cgi", "/port.cgi?page=stats", "/mac.cgi?page=fwd_tbl", "/transceiver.cgi", "/dhcp_snooping.cgi?page=dump", "/igmp.cgi?page=dump", "/fwd.cgi?page=jumboframe"):
             raise SwitchError("Unapproved read endpoint")
         async with self.lock:
             if not self.logged_in:
