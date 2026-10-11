@@ -11,6 +11,10 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from .api import HoracoClient, parse_info, parse_stats
 from .const import DOMAIN, INTERVALS
+from .mac import parse_mac_page
+from .inventory import MacInventory
+from .advanced import parse_sfp, parse_dhcp, parse_igmp, parse_jumbo
+from .topology import build_topology
 from .panel import register_panel
 
 _LOGGER = logging.getLogger(__name__)
@@ -24,7 +28,8 @@ class HoracoCoordinator(DataUpdateCoordinator[dict]):
         self.client = client
         self.entry = entry
         self.last = {}
-        self.cache = {"device": {}, "ports": {}}
+        self.cache = {"device": {}, "ports": {}, "mac": {}, "sfp": {}, "network": {}}
+        self.inventory = None
         self.prev_bytes = {}
         self.prev_time = None
 
@@ -56,6 +61,36 @@ class HoracoCoordinator(DataUpdateCoordinator[dict]):
             if "network" not in self.last or now - self.last["network"] >= INTERVALS["network"]:
                 self.last["network"] = now
                 # Deliberately do not infer admin state from ambiguous firmware markup.
+
+            plans = (
+                ("sfp", 60, "/transceiver.cgi", parse_sfp),
+                ("dhcp", 300, "/dhcp_snooping.cgi?page=dump", parse_dhcp),
+                ("igmp", 300, "/igmp.cgi?page=dump", parse_igmp),
+                ("jumbo", 3600, "/fwd.cgi?page=jumboframe", parse_jumbo),
+            )
+            for name, interval, path, parser in plans:
+                if name not in self.last or now - self.last[name] >= interval:
+                    try:
+                        parsed = parser(await self.client.get(path))
+                        self.cache["sfp" if name == "sfp" else "network"][name] = parsed
+                        self.last[name] = now
+                    except Exception as err:
+                        _LOGGER.debug("%s unavailable on %s: %s", name, self.client.host, err)
+                        self.last[name] = now
+            if self.inventory is not None and ("mac" not in self.last or now - self.last["mac"] >= 120):
+                try:
+                    rows, pages = parse_mac_page(await self.client.get("/mac.cgi?page=fwd_tbl"))
+                    for page in range(2, pages + 1):
+                        more, _ = parse_mac_page(await self.client.mac_page(page))
+                        rows.extend(more)
+                    await self.inventory.observe(rows)
+                    self.cache["mac"] = self.inventory.summary()
+                    self.last["mac"] = now
+                except Exception as err:
+                    _LOGGER.debug("MAC table unavailable on %s: %s", self.client.host, err)
+                    self.last["mac"] = now
+            self.cache["topology"] = build_topology(self.client.host, self.cache["ports"],
+                                                      self.inventory.current if self.inventory else [])
             return self.cache
         except UpdateFailed:
             raise
@@ -68,6 +103,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                           entry.data.get(CONF_PORT, 80), entry.data[CONF_USERNAME],
                           entry.data[CONF_PASSWORD])
     coordinator = HoracoCoordinator(hass, client, entry)
+    coordinator.inventory = MacInventory(hass, f"{client.host}_{entry.data.get(CONF_PORT, 80)}")
+    await coordinator.inventory.load()
+    coordinator.cache["mac"] = coordinator.inventory.summary()
     await coordinator.async_config_entry_first_refresh()
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
     entry.async_on_unload(entry.add_update_listener(_reload))
