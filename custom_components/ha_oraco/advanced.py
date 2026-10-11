@@ -36,8 +36,8 @@ def parse_sfp(html):
 
 def parse_dhcp(html):
     soup = BeautifulSoup(html, "html.parser")
-    field = soup.find("input", attrs={"name": "enable_dhcpsnp"})
-    if field is None:
+    enabled_field = soup.find("input", attrs={"name": "enable_dhcpsnp"})
+    if enabled_field is None:
         raise ValueError("DHCP snooping page format not recognized")
     ports = {}
     form = soup.find("form", action=lambda v: bool(v and "page=static" in v))
@@ -46,7 +46,7 @@ def parse_dhcp(html):
             label = form.find("label", attrs={"for": field.get("id")})
             if label:
                 ports[label.get_text(" ", strip=True)] = field.has_attr("checked")
-    return {"enabled": field.has_attr("checked"), "trusted_ports": ports}
+    return {"enabled": enabled_field.has_attr("checked"), "trusted_ports": ports}
 
 def parse_igmp(html):
     soup = BeautifulSoup(html, "html.parser")
