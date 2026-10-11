@@ -1,4 +1,4 @@
-# HA Oraco
+# HoraInfo
 
 Integração experimental **somente leitura** para monitorar switches Horaco e OEM com interface CGI Realtek no Home Assistant. A integração usa HACS e registra um painel na barra lateral, sem Docker ou Lovelace customizado.
 
@@ -26,9 +26,9 @@ O painel expõe visão geral, portas, SFP+, dispositivos, VLANs (estado pendente
 
 1. HACS → Repositórios personalizados → adicionar `https://github.com/lucaslucian/ha_oraco` como **Integração**.
 2. Instalar, reiniciar o Home Assistant.
-3. Configurações → Dispositivos e serviços → Adicionar integração → **HA Oraco**.
+3. Configurações → Dispositivos e serviços → Adicionar integração → **HoraInfo**.
 4. Informar host, porta HTTP, usuário e senha.
-5. Após configurar, verificar a entrada **HA Oraco** na barra lateral. O painel detalhado exige usuário administrador.
+5. Após configurar, verificar a entrada **HoraInfo** na barra lateral. O painel detalhado exige usuário administrador.
 
 ## Atualização e coleta
 
