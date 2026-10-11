@@ -1,7 +1,7 @@
 """HA Oraco: read-only multi-cadence Horaco monitoring."""
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import datetime, timezone, timedelta
 from time import monotonic
 import logging
 from homeassistant.config_entries import ConfigEntry
@@ -13,6 +13,7 @@ from .api import HoracoClient, parse_info, parse_stats
 from .const import DOMAIN, INTERVALS
 from .mac import parse_mac_page
 from .inventory import MacInventory
+from .vendors import VendorCache
 from .advanced import parse_sfp, parse_dhcp, parse_igmp, parse_jumbo
 from .topology import build_topology
 from .panel import register_panel
@@ -30,6 +31,8 @@ class HoracoCoordinator(DataUpdateCoordinator[dict]):
         self.last = {}
         self.cache = {"device": {}, "ports": {}, "mac": {}, "sfp": {}, "network": {}}
         self.inventory = None
+        self.vendors = None
+        self.diagnostics = {"endpoints": {}, "last_success": None, "last_error": None}
         self.prev_bytes = {}
         self.prev_time = None
 
@@ -53,6 +56,8 @@ class HoracoCoordinator(DataUpdateCoordinator[dict]):
                 self.prev_bytes[number] = {key: port[key] for key in ("rx_bytes", "tx_bytes") if key in port}
             self.prev_time = now
             self.cache["ports"] = ports
+            self.diagnostics["last_success"] = datetime.now(timezone.utc).isoformat()
+            self.diagnostics["last_error"] = None
             if "device" not in self.last or now - self.last["device"] >= INTERVALS["device"]:
                 self.cache["device"] = info
                 self.last["device"] = now
@@ -74,8 +79,10 @@ class HoracoCoordinator(DataUpdateCoordinator[dict]):
                         parsed = parser(await self.client.get(path))
                         self.cache["sfp" if name == "sfp" else "network"][name] = parsed
                         self.last[name] = now
+                        self.diagnostics["endpoints"][name] = {"status": "ok", "last_success": datetime.now(timezone.utc).isoformat()}
                     except Exception as err:
                         _LOGGER.debug("%s unavailable on %s: %s", name, self.client.host, err)
+                        self.diagnostics["endpoints"][name] = {"status": "unavailable", "error": type(err).__name__}
                         self.last[name] = now
             if self.inventory is not None and ("mac" not in self.last or now - self.last["mac"] >= 120):
                 try:
@@ -83,18 +90,23 @@ class HoracoCoordinator(DataUpdateCoordinator[dict]):
                     for page in range(2, pages + 1):
                         more, _ = parse_mac_page(await self.client.mac_page(page))
                         rows.extend(more)
-                    await self.inventory.observe(rows)
+                    await self.inventory.observe(rows, self.vendors)
                     self.cache["mac"] = self.inventory.summary()
                     self.last["mac"] = now
+                    self.diagnostics["endpoints"]["mac"] = {"status": "ok", "last_success": datetime.now(timezone.utc).isoformat()}
                 except Exception as err:
                     _LOGGER.debug("MAC table unavailable on %s: %s", self.client.host, err)
+                    self.diagnostics["endpoints"]["mac"] = {"status": "unavailable", "error": type(err).__name__}
                     self.last["mac"] = now
             self.cache["topology"] = build_topology(self.client.host, self.cache["ports"],
                                                       self.inventory.current if self.inventory else [])
+            self.cache["diagnostics"] = dict(self.diagnostics)
             return self.cache
-        except UpdateFailed:
+        except UpdateFailed as err:
+            self.diagnostics["last_error"] = str(err)
             raise
         except Exception as err:
+            self.diagnostics["last_error"] = type(err).__name__
             raise UpdateFailed(f"Could not read switch {self.client.host}: {err}") from err
 
 
@@ -105,12 +117,32 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     coordinator = HoracoCoordinator(hass, client, entry)
     coordinator.inventory = MacInventory(hass, f"{client.host}_{entry.data.get(CONF_PORT, 80)}")
     await coordinator.inventory.load()
+    data = hass.data.setdefault(DOMAIN, {})
+    vendors = data.get("_vendors")
+    if vendors is None:
+        vendors = VendorCache(hass)
+        await vendors.load()
+        data["_vendors"] = vendors
+    coordinator.vendors = vendors
     coordinator.cache["mac"] = coordinator.inventory.summary()
     await coordinator.async_config_entry_first_refresh()
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
     entry.async_on_unload(entry.add_update_listener(_reload))
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     await register_panel(hass)
+    # IEEE refresh happens independently of device polling; retain existing cache on failure.
+    if not data.get("_vendor_refresh_scheduled"):
+        data["_vendor_refresh_scheduled"] = True
+        async def refresh_oui():
+            try:
+                stamp = datetime.fromisoformat(vendors.last_updated) if vendors.last_updated else None
+                if stamp is None or datetime.now(timezone.utc) - stamp >= timedelta(days=30):
+                    await vendors.refresh(async_get_clientsession(hass))
+            except Exception as exc:
+                _LOGGER.debug("IEEE vendor registry update failed: %s", type(exc).__name__)
+            finally:
+                data["_vendor_refresh_scheduled"] = False
+        hass.async_create_task(refresh_oui())
     return True
 
 
