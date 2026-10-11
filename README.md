@@ -5,12 +5,12 @@
 # HoraInfo
 
 [![Offline validation](https://github.com/lucaslucian/ha_oraco/actions/workflows/offline-tests.yml/badge.svg)](https://github.com/lucaslucian/ha_oraco/actions/workflows/offline-tests.yml)
-[![HACS](https://img.shields.io/badge/HACS-Custom%20Repository-41BDF5?logo=homeassistant&logoColor=white)](https://github.com/lucaslucian/ha_oraco#instala%C3%A7%C3%A3o)
 [![License: MIT](https://img.shields.io/github/license/lucaslucian/ha_oraco)](LICENSE)
-[![GitHub release](https://img.shields.io/github/v/release/lucaslucian/ha_oraco?include_prereleases&label=release)](https://github.com/lucaslucian/ha_oraco/releases)
 [![Latest commit](https://img.shields.io/github/last-commit/lucaslucian/ha_oraco)](https://github.com/lucaslucian/ha_oraco/commits/main)
 
 **Monitoramento de switches gerenciáveis para Home Assistant**
+
+[![Adicionar ao HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=lucaslucian&repository=ha_oraco&category=integration)
 
 </div>
 
@@ -38,11 +38,19 @@ O painel expõe visão geral, portas, SFP+, dispositivos, VLANs (estado pendente
 
 ## Instalação
 
-1. HACS → Repositórios personalizados → adicionar `https://github.com/lucaslucian/ha_oraco` como **Integração**.
-2. Instalar, reiniciar o Home Assistant.
-3. Configurações → Dispositivos e serviços → Adicionar integração → **HoraInfo**.
-4. Informar host, porta HTTP, usuário e senha.
-5. Após configurar, verificar a entrada **HoraInfo** na barra lateral. O painel detalhado exige usuário administrador.
+### Instalação pelo HACS
+
+Clique no botão **Adicionar ao HACS** acima para abrir este repositório no HACS da sua instância do Home Assistant. Caso ainda não esteja cadastrado, adicione-o como repositório personalizado na categoria **Integração**.
+
+### Instalação manual
+
+1. Baixe os arquivos deste repositório e copie a pasta `custom_components/ha_oraco` para `<config>/custom_components/ha_oraco` no Home Assistant, preservando os arquivos internos.
+2. Reinicie o Home Assistant.
+3. Acesse **Configurações → Dispositivos e serviços → Adicionar integração → HoraInfo**.
+4. Informe o endereço do switch, porta HTTP, usuário e senha.
+5. Abra **HoraInfo** na barra lateral. O painel de inventário requer uma conta administradora.
+
+A instalação manual não recebe as atualizações automáticas do HACS.
 
 ## Atualização e coleta
 
