@@ -70,3 +70,26 @@ Os cards de SFP+, MAC e VLANs sao estados vazios explicativos ate que os sensore
 correspondentes estejam integrados. O arquivo YAML **nao e instalado automaticamente**
 pela integracao HACS. A implementacao de um painel configurado automaticamente
 e uma etapa futura.
+
+
+## 0.3.0 — endpoints conhecidos e topologia lógica
+
+Esta versão acrescenta **consulta somente leitura**, com coleta escalonada e falha isolada, para os seguintes endpoints documentados no switch-dashboard:
+
+| Endpoint | Coleta | Intervalo | Observação |
+|---|---|---:|---|
+| `/info.cgi` | Portas, equipamento | 30 s | Existente |
+| `/port.cgi?page=stats` | Contadores RX/TX | 30 s | Existente |
+| `/transceiver.cgi` | DDMI/diagnóstico SFP+ | 60 s | Dependente do firmware |
+| `/mac.cgi?page=fwd_tbl` | Tabela MAC | 120 s | Paginação por POST `goto`, sem alterar configuração |
+| `/dhcp_snooping.cgi?page=dump` | DHCP snooping, portas trusted | 300 s | Dependente do firmware |
+| `/igmp.cgi?page=dump` | IGMP snooping, grupos | 300 s | Dependente do firmware |
+| `/fwd.cgi?page=jumboframe` | Jumbo frames | 3600 s | Dependente do firmware |
+
+A topologia é gerada a partir do conjunto **switch → portas → MACs observados**, com informação sobre VLAN e tipo de MAC. **Ela não comprova ligações físicas intermediárias**, e não identifica dispositivos atrás de NAT. O painel oferece a aba *Mapa de rede* mostrando a contagem de MACs por porta nesta etapa.
+
+A identidade do fabricante por OUI tem o módulo `vendors.py`, mas o agendamento de download da base IEEE e a ligação do fabricante ao inventário **ainda não estão concluídos**. Da mesma forma, VLAN/PVID/port isolation detalhados exigem endpoints de leitura do firmware ainda não confirmados; não se deve inventar seus valores.
+
+**Testes possíveis sem hardware:** parser de HTML conhecido, conversão DDMI, algoritmo de grafo, limitação do histórico e validação de estruturas. **Ainda não testado no Horaco:** respostas reais do seu modelo, paginação da tabela MAC, desempenho dos endpoints, estabilidade do login e leitura SFP+. O projeto permanece experimental.
+
+Referências: [switch-dashboard](https://github.com/byte4geek/switch-dashboard), [horaco_switch_ha](https://github.com/gtrancillo/horaco_switch_ha).
