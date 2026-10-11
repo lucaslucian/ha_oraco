@@ -38,7 +38,8 @@ async def register_panel(hass):
         return
     static_file = Path(__file__).parent / "frontend" / "ha-oraco-panel.js"
     await hass.http.async_register_static_paths(
-        [StaticPathConfig(PANEL_URL, str(static_file), False)]
+        [StaticPathConfig(PANEL_URL, str(static_file), False),
+         StaticPathConfig("/ha_oraco_static/brand/icon.svg", str(static_file.parent / "brand" / "icon.svg"), False)]
     )
     websocket_api.async_register_command(hass, dashboard_data)
     frontend.async_register_built_in_panel(
