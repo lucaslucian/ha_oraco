@@ -23,6 +23,10 @@ async def dashboard_data(hass, connection, msg):
             "name": f"Horaco {coordinator.client.host}",
             "device": data.get("device", {}),
             "ports": data.get("ports", {}),
+            "sfp": data.get("sfp", {}),
+            "mac": data.get("mac", {}),
+            "topology": data.get("topology", {}),
+            "network": data.get("network", {}),
         })
     connection.send_result(msg["id"], {"switches": switches})
 
