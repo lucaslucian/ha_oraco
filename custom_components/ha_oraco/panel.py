@@ -43,7 +43,7 @@ async def register_panel(hass):
     websocket_api.async_register_command(hass, dashboard_data)
     frontend.async_register_built_in_panel(
         hass, "custom",
-        sidebar_title="HA Oraco",
+        sidebar_title="HoraInfo",
         sidebar_icon="mdi:lan",
         frontend_url_path="ha-oraco",
         config={"_panel_custom": {
