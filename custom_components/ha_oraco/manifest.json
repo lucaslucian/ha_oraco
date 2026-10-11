@@ -1,0 +1,14 @@
+{
+  "domain": "ha_oraco",
+  "name": "HA Oraco",
+  "version": "0.1.0",
+  "config_flow": true,
+  "documentation": "https://github.com/lucaslucian/ha_oraco",
+  "issue_tracker": "https://github.com/lucaslucian/ha_oraco/issues",
+  "integration_type": "device",
+  "iot_class": "local_polling",
+  "requirements": [
+    "beautifulsoup4>=4.12.0"
+  ],
+  "codeowners": []
+}

@@ -1,0 +1,32 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect Horaco switch",
+        "data": {
+          "host": "Switch IP or hostname",
+          "port": "HTTP port",
+          "username": "Username",
+          "password": "Password"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Unable to read the switch. Check address, credentials and firmware.",
+      "unknown": "Unexpected error"
+    },
+    "abort": {
+      "already_configured": "This switch is already configured"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Polling",
+        "data": {
+          "fast_interval": "Port traffic monitoring interval (seconds)"
+        }
+      }
+    }
+  }
+}

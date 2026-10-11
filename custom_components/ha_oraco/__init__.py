@@ -1,0 +1,85 @@
+"""HA Oraco: read-only multi-cadence Horaco monitoring."""
+from __future__ import annotations
+
+from datetime import timedelta
+from time import monotonic
+import logging
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_PORT, CONF_USERNAME, Platform
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from .api import HoracoClient, parse_info, parse_stats
+from .const import DOMAIN, INTERVALS
+
+_LOGGER = logging.getLogger(__name__)
+PLATFORMS = [Platform.SENSOR, Platform.BINARY_SENSOR]
+
+
+class HoracoCoordinator(DataUpdateCoordinator[dict]):
+    def __init__(self, hass, client, entry):
+        super().__init__(hass, _LOGGER, name=f"HA Oraco {client.host}",
+                         update_interval=timedelta(seconds=entry.options.get("fast_interval", 30)))
+        self.client = client
+        self.entry = entry
+        self.last = {}
+        self.cache = {"device": {}, "ports": {}}
+        self.prev_bytes = {}
+        self.prev_time = None
+
+    async def _async_update_data(self):
+        now = monotonic()
+        try:
+            # /info.cgi contains both operational port status and static device fields.
+            # Refresh fast for ports, but publish device fields only hourly.
+            info, ports = parse_info(await self.client.get("/info.cgi"))
+            if not ports:
+                raise UpdateFailed("No ports found on switch info page")
+            stats = parse_stats(await self.client.get("/port.cgi?page=stats"))
+            for number, port in ports.items():
+                port.update(stats.get(number, {}))
+                old = self.prev_bytes.get(number, {})
+                if self.prev_time is not None and now > self.prev_time:
+                    for side in ("rx", "tx"):
+                        field = f"{side}_bytes"
+                        if field in port and field in old and port[field] >= old[field]:
+                            port[f"{side}_bps"] = round(8 * (port[field] - old[field]) / (now - self.prev_time), 2)
+                self.prev_bytes[number] = {key: port[key] for key in ("rx_bytes", "tx_bytes") if key in port}
+            self.prev_time = now
+            self.cache["ports"] = ports
+            if "device" not in self.last or now - self.last["device"] >= INTERVALS["device"]:
+                self.cache["device"] = info
+                self.last["device"] = now
+            # On first start, discover administrative disabled ports. Afterwards
+            # refresh configuration at network cadence, not every fast cycle.
+            if "network" not in self.last or now - self.last["network"] >= INTERVALS["network"]:
+                self.last["network"] = now
+                # Deliberately do not infer admin state from ambiguous firmware markup.
+            return self.cache
+        except UpdateFailed:
+            raise
+        except Exception as err:
+            raise UpdateFailed(f"Could not read switch {self.client.host}: {err}") from err
+
+
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    client = HoracoClient(async_get_clientsession(hass), entry.data[CONF_HOST],
+                          entry.data.get(CONF_PORT, 80), entry.data[CONF_USERNAME],
+                          entry.data[CONF_PASSWORD])
+    coordinator = HoracoCoordinator(hass, client, entry)
+    await coordinator.async_config_entry_first_refresh()
+    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
+    entry.async_on_unload(entry.add_update_listener(_reload))
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    return True
+
+
+async def _reload(hass, entry):
+    await hass.config_entries.async_reload(entry.entry_id)
+
+
+async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    if ok:
+        hass.data[DOMAIN].pop(entry.entry_id, None)
+    return ok
