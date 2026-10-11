@@ -10,6 +10,7 @@ from .const import DOMAIN
 PANEL_URL = "/ha_oraco_static/ha-oraco-panel.js"
 
 @websocket_api.websocket_command({vol.Required("type"): "ha_oraco/dashboard"})
+@websocket_api.require_admin
 @websocket_api.async_response
 async def dashboard_data(hass, connection, msg):
     switches = []
