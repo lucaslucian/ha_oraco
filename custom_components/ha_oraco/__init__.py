@@ -134,6 +134,7 @@ class HoracoCoordinator(DataUpdateCoordinator[dict]):
                     if self.history_db:
                         try:
                             await self.history_db.record_inventory(self.inventory.history.values())
+                            self.cache["mac"].update(await self.history_db.inventory_summary())
                         except Exception as err:
                             _LOGGER.warning("HoraInfo MAC history error: %s", type(err).__name__)
                     self.last["mac"] = now
@@ -174,9 +175,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         await vendors.load()
         data["_vendors"] = vendors
     coordinator.vendors = vendors
+    if vendors.prefixes:
+        await coordinator.inventory.reclassify(vendors)
+        coordinator.cache["mac"] = coordinator.inventory.summary()
     if coordinator.history_db:
         try:
             await coordinator.history_db.record_inventory(coordinator.inventory.history.values())
+            coordinator.cache["mac"].update(await coordinator.history_db.inventory_summary())
             previous = await coordinator.history_db.traffic_summary()
             coordinator.cache["peaks"] = previous["peaks"]
             coordinator.cache["traffic_history"] = previous["traffic_history"]
@@ -205,6 +210,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                             item.cache["mac"] = item.inventory.summary()
                             if item.history_db:
                                 await item.history_db.record_inventory(item.inventory.history.values())
+                                item.cache["mac"].update(await item.history_db.inventory_summary())
                             item.async_set_updated_data(dict(item.cache))
             except Exception as exc:
                 _LOGGER.debug("IEEE vendor registry update failed: %s", type(exc).__name__)
