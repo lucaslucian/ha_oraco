@@ -16,7 +16,7 @@
 
 Integração experimental **somente leitura** para monitorar switches Horaco e OEM com interface CGI Realtek no Home Assistant. A integração usa HACS e registra um painel na barra lateral, sem Docker ou Lovelace customizado.
 
-## Estado do desenvolvimento (0.4.4 — experimental)
+## Estado do desenvolvimento (0.4.5 — experimental)
 
 | Função | Implementação | Requer validação no switch |
 |---|---|---|
@@ -60,15 +60,19 @@ A instalação manual não recebe as atualizações automáticas do HACS.
 - Tabela MAC: 120 segundos.
 - DHCP/IGMP: 300 segundos.
 - VLAN por porta: 600 segundos, somente consulta da tabela de estado.
+- Versão do firmware: leitura GET de `/fwug.cgi` a cada 6 horas, sem comandos de atualização.
 - Jumbo frames: 3600 segundos.
 - Informações gerais publicadas: 3600 segundos. Como `/info.cgi` também fornece os estados das portas, ele é consultado a cada ciclo rápido.
 - IEEE OUI: arquivo em cache persistente e verificação de atualização após 30 dias, no início da integração.
 
 A integração descobre automaticamente as interfaces e os recursos disponíveis em cada equipamento compatível.
 
+Os picos de tráfego RX/TX são calculados para o switch inteiro e por interface a partir das taxas observadas. O período começa quando a integração é inicializada e os picos são reiniciados quando ela reinicia; não são máximos históricos permanentes. O mapa da rede exibe conexões lógicas MAC–porta (sem afirmar que os dispositivos estão diretamente ligados ao switch).
+
 ## Privacidade e segurança
 
 - Nenhum endpoint de alteração de VLAN, reset, atualização, reboot ou controle administrativo.
+- A página `/fwug.cgi` é consultada exclusivamente com GET para obter a versão. O comando `enter_loader`, que inicia a atualização do firmware, **nunca é enviado**.
 - O cliente usa GET nas rotas de monitoramento aprovadas. POST ocorre somente em login e paginação de leitura da tabela MAC.
 - Painel e WebSocket restritos a administradores.
 - O inventário MAC (até 2.000 identidades por switch) é armazenado localmente; não é enviado à IEEE. O download de registros IEEE é separado das consultas MAC.
