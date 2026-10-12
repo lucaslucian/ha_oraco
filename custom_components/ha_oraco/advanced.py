@@ -11,7 +11,8 @@ def parse_sfp(html):
     soup = BeautifulSoup(html, "html.parser")
     table = soup.find("table", class_="infotbl") or soup.find("table")
     if not table:
-        raise ValueError("No SFP diagnostics table")
+        title = soup.title.get_text(" ", strip=True)[:60] if soup.title else "sem título"
+        raise ValueError(f"SFP response contains no table (title={title!r})")
     raw = {}
     aliases = {
         "temp": "temperature_c", "temperature": "temperature_c",
