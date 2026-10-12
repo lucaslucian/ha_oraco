@@ -34,9 +34,21 @@ class HaOracoPanel extends HTMLElement {
       }
       this.error = null;
     } catch (err) { this.error = String(err); }
-    finally { this.busy = false; this.render(); }
+    finally { this.busy = false; this.render(); this.loadCurrentCharts(true); }
   }
 
+  loadCurrentCharts(refresh=false) {
+    if(!this._hass||!this.data||!["overview","ports"].includes(this.tab))return;
+    for(const sw of this.data.switches||[]){
+      const port=this.tab==="ports"?(this.selectedPort[sw.id]||Object.keys(sw.ports||{})[0]):"__total__";
+      if(!port)continue;
+      const hours=this.chartHours[sw.id+"|"+port]||24;
+      const trafficKey=sw.id+"|traffic|"+port+"|"+hours+"|sfp";
+      const dailyKey=sw.id+"|daily|"+port+"|24|sfp";
+      if(refresh||!this.historyViews[trafficKey])this.fetchHistory(sw.id,"traffic",port,hours);
+      if(!this.historyViews[dailyKey])this.fetchHistory(sw.id,"daily",port);
+    }
+  }
   sfpLabel(key) {
     const names={temperature_c:"Temperatura",voltage_v:"Tensão",current_ma:"Corrente do laser",
       rx_dbm:"Potência recebida (RX)",tx_dbm:"Potência transmitida (TX)",
