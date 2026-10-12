@@ -16,7 +16,7 @@
 
 Integração experimental **somente leitura** para monitorar switches Horaco e OEM com interface CGI Realtek no Home Assistant. A integração usa HACS e registra um painel na barra lateral, sem Docker ou Lovelace customizado.
 
-## Estado do desenvolvimento (0.4.17 — experimental)
+## Estado do desenvolvimento (0.4.19 — experimental)
 
 | Função | Implementação | Requer validação no switch |
 |---|---|---|
@@ -125,3 +125,8 @@ A integração fornece `brand/icon.png`, `brand/icon@2x.png`, `brand/logo.png` e
 A migração de amostras antigas para intervalos de cinco minutos é executada uma única vez por arquivo SQLite, sem reimportar linhas em cada reinício. Os últimos contadores de bytes são preservados de forma temporária entre reinícios rápidos da integração (até três minutos) para evitar lacunas desnecessárias. Se o equipamento ficar indisponível por mais tempo ou reiniciar os próprios contadores, um novo ponto de referência é estabelecido sem inventar consumo durante a ausência. As atualizações do histórico MAC preservam as datas já conhecidas quando novas observações não as apresentam. Falhas na escrita do histórico ou reclassificação de fabricantes são isoladas do fluxo de monitoramento, e o diagnóstico indica o problema em vez de reportar falsamente a consulta como indisponível.
 
 A partir da 0.4.17, a paginação da tabela MAC também renova uma sessão HTTP expirada uma única vez, e a falha ao salvar o cache legado não é interpretada como falha de coleta. Em caso de indisponibilidade do banco, o HoraInfo mantém o monitoramento e registra o erro para diagnóstico.
+
+
+### Proteção de contadores de tráfego (0.4.19)
+
+As amostras RX/TX são aceitas somente quando os contadores de bytes são válidos (inteiros de 64 bits), o tempo entre coletas é positivo e não ultrapassa 120 segundos e a diferença cabe na velocidade física negociada da porta (com margem de 25%). Saltos acima do limite, contadores zerados/reiniciados, possível rollover ou falhas de coleta não geram picos nem volume fictício: um novo valor de referência é estabelecido para a próxima amostra. RX e TX são validados separadamente, para que um problema em uma direção não invalide a outra. O banco SQLite aplica independentemente a mesma regra e mantém a última referência mesmo quando a primeira coleta ainda não permite calcular uma velocidade. Os contadores de eventos rejeitados ficam em `diagnostics.traffic_counters` para diagnóstico. Não é possível recuperar com exatidão o volume entre leituras interrompidas ou contadores reiniciados, e essas lacunas não são estimadas.
