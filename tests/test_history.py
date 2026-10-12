@@ -72,9 +72,9 @@ def test_reclassification_and_deduplicated_snapshots():
         inventory=await db.inventory_summary()
         assert inventory["mac_history_entries"][0]["vendor"]=="Example Manufacturer"
         assert inventory["mac_history_entries"][0]["first_seen"]=="2026-01-01T00:00:00+00:00"
+        await db.record_snapshot("vlan_ports",{"port_count":1})
         await db.record_snapshot("sfp",{"temperature_c":32.5})
-        await db.record_snapshot("sfp",{"temperature_c":32.5})
-        await db.record_snapshot("sfp",{"temperature_c":33.0})
+        await db.record_snapshot("vlan_ports",{"port_count":2})
         assert len(await db.recent_changes())==2
 
     with TemporaryDirectory() as root:
