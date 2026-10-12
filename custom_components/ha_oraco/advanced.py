@@ -72,7 +72,6 @@ def parse_sfp(html):
         elif field in ("temperature_c", "voltage_v", "current_ma", "rx_dbm", "tx_dbm"):
             # Some firmware revisions already expose human-readable values.
             # Numeric zero optical power usually means no signal, not -40 dBm.
-            import re
             match = re.fullmatch(r"\s*([+-]?\d+(?:\.\d+)?)\s*(?:°C|C|V|mA|dBm)?\s*", value, re.I)
             if match:
                 number = float(match.group(1))
