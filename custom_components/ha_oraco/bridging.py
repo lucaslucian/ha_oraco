@@ -2,21 +2,37 @@
 from bs4 import BeautifulSoup
 
 def parse_stp_global(html):
-    soup = BeautifulSoup(html, 'html.parser')
+    soup = BeautifulSoup(html, "html.parser")
     result = {}
-    for row in soup.find_all('tr'):
-        cells = row.find_all(['td', 'th'], recursive=False)
+    names = {
+        "spanning tree status": "status", "version": "version",
+        "priority": "priority", "max aging time": "max_age",
+        "hello time": "hello_time", "forward delay": "forward_delay",
+        "root priority": "root_priority", "root mac address": "root_mac",
+        "root path cost": "root_path_cost", "root port": "root_port",
+        "root maximum age": "root_max_age", "root hello time": "root_hello_time",
+        "root forward delay": "root_forward_delay",
+    }
+    for row in soup.find_all("tr"):
+        cells = row.find_all(["td", "th"], recursive=False)
         if len(cells) != 2:
             continue
-        key = cells[0].get_text(' ', strip=True).lower()
-        value = cells[1].get_text(' ', strip=True)
-        if key == 'spanning tree status':
-            result['enabled'] = value.lower() in ('enable', 'enabled')
-            result['status'] = value
-        elif key.startswith('root '):
-            result[key.replace(' ', '_')] = value
-    if 'enabled' not in result:
-        raise ValueError('STP status unavailable')
+        key = names.get(cells[0].get_text(" ", strip=True).lower())
+        if key is None:
+            continue
+        select = cells[1].find("select")
+        field = cells[1].find("input")
+        if select:
+            option = select.find("option", selected=True)
+            value = option.get_text(" ", strip=True) if option else None
+        elif field:
+            value = field.get("value")
+        else:
+            value = cells[1].get_text(" ", strip=True)
+        result[key] = value
+    if not result.get("status"):
+        raise ValueError("STP status unavailable")
+    result["enabled"] = result["status"].lower() in ("enable", "enabled")
     return result
 
 def parse_aggregation(html):
