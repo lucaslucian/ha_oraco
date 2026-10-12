@@ -132,6 +132,7 @@ class HistoryDatabase:
                     tx_bytes=tx_bytes+excluded.tx_bytes""",daily)
             db.execute("DELETE FROM traffic WHERE timestamp < ?",((stamp-timedelta(days=2)).isoformat(),))
             db.execute("DELETE FROM traffic_5m WHERE bucket < ?",((stamp-timedelta(days=30)).isoformat(),))
+            db.execute("DELETE FROM daily_traffic WHERE day < ?",((stamp.astimezone(self.tz)-timedelta(days=30)).date().isoformat(),))
 
     async def record_traffic(self, ports):
         await self.hass.async_add_executor_job(self._record_traffic, ports)
@@ -300,7 +301,7 @@ class HistoryDatabase:
     def _daily_totals(self, port, days):
         if port!="__total__" and (not port.isdecimal() or len(port)>4):
             return []
-        cutoff=(datetime.now(self.tz)-timedelta(days=max(1,min(730,int(days))))).date().isoformat()
+        cutoff=(datetime.now(self.tz)-timedelta(days=max(1,min(30,int(days))))).date().isoformat()
         with self._connect() as db:
             rows=db.execute("""SELECT day,rx_bytes,tx_bytes FROM daily_traffic
                 WHERE switch_id=? AND port=? AND day>=? ORDER BY day DESC""",
