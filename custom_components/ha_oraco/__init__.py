@@ -146,6 +146,11 @@ class HoracoCoordinator(DataUpdateCoordinator[dict]):
                     _LOGGER.debug("MAC table unavailable on %s: %s", self.client.host, err)
                     self.diagnostics["endpoints"]["mac"] = {"status": "unavailable", "error": type(err).__name__}
                     self.last["mac"] = now
+            if self.history_db:
+                try:
+                    self.cache["recent_changes"] = await self.history_db.recent_changes()
+                except Exception as err:
+                    _LOGGER.debug("HoraInfo recent changes unavailable: %s", type(err).__name__)
             self.cache["topology"] = build_topology(self.client.host, self.cache["ports"],
                                                       self.inventory.current if self.inventory else [])
             self.cache["diagnostics"] = dict(self.diagnostics)
@@ -191,6 +196,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             coordinator.cache["peaks"] = previous["peaks"]
             coordinator.cache["traffic_history"] = previous["traffic_history"]
             coordinator.cache["traffic_by_port"] = previous["traffic_by_port"]
+            coordinator.cache["recent_changes"] = await coordinator.history_db.recent_changes()
         except Exception as err:
             _LOGGER.warning("HoraInfo history restore error: %s", type(err).__name__)
     if not coordinator.cache["mac"]:
