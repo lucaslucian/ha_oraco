@@ -16,7 +16,7 @@
 
 Integração experimental **somente leitura** para monitorar switches Horaco e OEM com interface CGI Realtek no Home Assistant. A integração usa HACS e registra um painel na barra lateral, sem Docker ou Lovelace customizado.
 
-## Estado do desenvolvimento (0.4.11 — experimental)
+## Estado do desenvolvimento (0.4.12 — experimental)
 
 | Função | Implementação | Requer validação no switch |
 |---|---|---|
