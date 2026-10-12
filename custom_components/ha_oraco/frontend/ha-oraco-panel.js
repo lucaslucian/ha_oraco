@@ -133,6 +133,17 @@ class HaOracoPanel extends HTMLElement {
     if(!result)return '<button class="history-action" data-snapshot-switch="'+this.escape(switchId)+'" data-snapshot-kind="'+kind+'">Ver histórico · '+this.escape(label)+' (90 dias)</button>';
     if(result.loading)return '<p class="muted">Carregando histórico…</p>';
     if(result.error)return '<p class="muted">'+this.escape(result.error)+'</p>';
+    if(result.items[0]?.day){
+      return '<div class="snapshot-list"><h4>Verificações dos últimos 90 dias · '+this.escape(label)+'</h4>'+
+        result.items.map(day=>'<details class="snapshot-day"><summary>'+
+          this.escape(new Date(day.day+"T12:00:00").toLocaleDateString("pt-BR"))+' · '+
+          (day.changes?day.changes+" alteração(ões)":"Sem alterações")+' · '+day.checks+' verificações</summary>'+
+          '<p class="muted">Última análise: '+new Date(day.checked_at).toLocaleString("pt-BR")+'</p>'+
+          (day.events||[]).map(ev=>'<details class="snapshot-revision"><summary>Alteração às '+new Date(ev.timestamp).toLocaleTimeString("pt-BR")+'</summary>'+
+            '<pre class="history-pre">'+this.escape(JSON.stringify(ev.data,null,2))+'</pre></details>').join('')+
+          (day.changes===0?'<p class="muted">Estado sem alterações nas verificações deste dia.</p>':'')+'</details>').join('')+
+        '</div>';
+    }
     const grouped=new Map();
     for(const record of result.items){
       const date=new Date(record.timestamp);
