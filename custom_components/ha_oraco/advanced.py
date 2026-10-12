@@ -65,8 +65,7 @@ def parse_sfp(html):
                 count -= 65536
             measured = count * scale
             if optical:
-                mw = round(measured, 2)
-                out[field] = round(10 * math.log10(mw), 2) if mw > 0 else None
+                out[field] = round(10 * math.log10(measured), 2) if measured > 0 else None
             else:
                 out[field] = round(measured, 3)
         elif field in ("temperature_c", "voltage_v", "current_ma", "rx_dbm", "tx_dbm"):
@@ -80,7 +79,7 @@ def parse_sfp(html):
                 out[field] = None
         else:
             out[field] = value
-    if not any(k in out for k in ("module_present", "temperature_c", "vendor", "transceiver")):
+    if not any(k in out for k in ("module_present", "temperature_c", "vendor", "transceiver", "rx_dbm", "tx_dbm", "voltage_v", "current_ma")):
         raise ValueError("Unsupported SFP diagnostics page")
     return out
 
