@@ -30,6 +30,9 @@ async def dashboard_data(hass, connection, msg):
             "network": data.get("network", {}),
             "diagnostics": data.get("diagnostics", {}),
             "peaks": data.get("peaks", {}),
+            "traffic_history": data.get("traffic_history", []),
+            "oui": {"prefix_count": len(coordinator.vendors.prefixes) if coordinator.vendors else 0,
+                    "last_updated": coordinator.vendors.last_updated if coordinator.vendors else None},
         })
     connection.send_result(msg["id"], {"switches": switches})
 
