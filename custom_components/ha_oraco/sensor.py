@@ -52,6 +52,21 @@ class OracoSensor(CoordinatorEntity, SensorEntity):
             self._attr_device_class = SensorDeviceClass.DATA_SIZE
 
     @property
+    def available(self):
+        if not super().available:
+            return False
+        data = self.coordinator.data or {}
+        if self.port is None:
+            if self.key.startswith("sfp_"):
+                names = {"sfp_temperature":"temperature_c","sfp_voltage":"voltage_v",
+                         "sfp_current":"current_ma","sfp_rx_dbm":"rx_dbm",
+                         "sfp_tx_dbm":"tx_dbm"}
+                return data.get("sfp", {}).get("sfp", {}).get(names[self.key]) is not None
+            if self.key in ("model","firmware","uptime","mac"):
+                return bool(data.get("device", {}).get(self.key))
+        return True
+
+    @property
     def native_value(self):
         data = self.coordinator.data
         if self.port is None:
