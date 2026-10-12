@@ -41,6 +41,10 @@ class HaOracoPanel extends HTMLElement {
     const names={temperature_c:"Temperatura",voltage_v:"Tensão",current_ma:"Corrente do laser",
       rx_dbm:"Potência recebida (RX)",tx_dbm:"Potência transmitida (TX)",
       vendor:"Fabricante",vendorname:"Fabricante",vendor_name:"Fabricante",
+      module_present:"Módulo conectado",loss_of_signal:"Perda de sinal",
+      media:"Meio de transmissão",compliance:"Padrão Ethernet",bitrate:"Taxa nominal",
+      transceiver:"Tipo de módulo",vendor_oui:"OUI do fabricante",
+      manufacture_date:"Data de fabricação",port:"Porta",
       part_number:"Modelo",partnumber:"Modelo",serial_number:"Número de série",
       serialnumber:"Número de série",wavelength_nm:"Comprimento de onda",
       wavelength:"Comprimento de onda",connector:"Conector",revision:"Revisão",
@@ -127,6 +131,15 @@ class HaOracoPanel extends HTMLElement {
     return box+'<h4>Volume diário RX/TX · últimos 30 dias</h4>'+chart+
       '<div class="chart-legend"><span>● RX — azul</span><span>● TX — verde</span></div>';
   }
+  snapshotDetails(data,level=0) {
+    if(data===null||data===undefined)return "—";
+    if(Array.isArray(data))return this.escape(data.join(", "));
+    if(typeof data!=="object")return this.escape(data);
+    if(level>3)return '<span class="muted">Detalhes adicionais</span>';
+    return '<div class="history-fields">'+Object.entries(data).map(([key,value])=>
+      '<div class="history-field"><span>'+this.escape(this.sfpLabel(key))+'</span><strong>'+
+      this.snapshotDetails(value,level+1)+'</strong></div>').join('')+'</div>';
+  }
   snapshots(switchId,kind,label) {
     const key=switchId+"|snapshots|__total__|24|"+kind;
     const result=this.historyViews[key];
@@ -140,7 +153,7 @@ class HaOracoPanel extends HTMLElement {
           (day.changes?day.changes+" alteração(ões)":"Sem alterações")+' · '+day.checks+' verificações</summary>'+
           '<p class="muted">Última análise: '+new Date(day.checked_at).toLocaleString("pt-BR")+'</p>'+
           (day.events||[]).map(ev=>'<details class="snapshot-revision"><summary>Alteração às '+new Date(ev.timestamp).toLocaleTimeString("pt-BR")+'</summary>'+
-            '<pre class="history-pre">'+this.escape(JSON.stringify(ev.data,null,2))+'</pre></details>').join('')+
+            '<div class="snapshot-content">'+this.snapshotDetails(ev.data)+'</div></details>').join('')+
           (day.changes===0?'<p class="muted">Estado sem alterações nas verificações deste dia.</p>':'')+'</details>').join('')+
         '</div>';
     }
