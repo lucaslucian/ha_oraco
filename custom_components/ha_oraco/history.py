@@ -42,6 +42,11 @@ class HistoryDatabase:
                 count INTEGER, peak_rx REAL, peak_tx REAL,
                 PRIMARY KEY(switch_id,bucket,port)
             )""")
+            db.execute("""CREATE TABLE IF NOT EXISTS traffic_baselines (
+                switch_id TEXT NOT NULL, port TEXT NOT NULL,
+                rx_bytes INTEGER NOT NULL, tx_bytes INTEGER NOT NULL,
+                recorded_at TEXT NOT NULL, PRIMARY KEY(switch_id,port)
+            )""")
             db.execute("""CREATE TABLE IF NOT EXISTS daily_traffic (
                 switch_id TEXT, day TEXT, port TEXT, rx_bytes INTEGER, tx_bytes INTEGER,
                 PRIMARY KEY(switch_id,day,port)
@@ -94,6 +99,20 @@ class HistoryDatabase:
 
     async def initialize(self):
         await self.hass.async_add_executor_job(self._initialize)
+        self.previous_counters = await self.hass.async_add_executor_job(self._load_baselines)
+
+    def _load_baselines(self):
+        cutoff = datetime.now(timezone.utc)-timedelta(minutes=3)
+        with self._connect() as db:
+            rows = db.execute("SELECT port,rx_bytes,tx_bytes,recorded_at FROM traffic_baselines WHERE switch_id=?", (self.key,)).fetchall()
+        result = {}
+        for port,rx,tx,recorded in rows:
+            try:
+                if datetime.fromisoformat(recorded)>=cutoff:
+                    result[port]=(rx,tx)
+            except (ValueError,TypeError):
+                continue
+        return result
 
     def _record_traffic(self, ports):
         stamp = datetime.now(timezone.utc)
@@ -106,6 +125,7 @@ class HistoryDatabase:
         rx_total = tx_total = 0.0
         bytes_rx = bytes_tx = 0
         increments = {}
+        baselines = []
         for number, port in ports.items():
             number = str(number)
             rx, tx = port.get("rx_bps"), port.get("tx_bps")
@@ -128,6 +148,7 @@ class HistoryDatabase:
                     bytes_rx += drx
                     bytes_tx += dtx
                 self.previous_counters[number] = counters
+                baselines.append((self.key,number,counters[0],counters[1],timestamp))
         if not raw_rows:
             return
         raw_rows.append((self.key,timestamp,"__total__",rx_total,tx_total))
@@ -142,6 +163,12 @@ class HistoryDatabase:
                 rx_sum=rx_sum+excluded.rx_sum,tx_sum=tx_sum+excluded.tx_sum,
                 count=count+1,peak_rx=MAX(peak_rx,excluded.peak_rx),
                 peak_tx=MAX(peak_tx,excluded.peak_tx)""",buckets)
+            if baselines:
+                db.executemany("""INSERT INTO traffic_baselines
+                    (switch_id,port,rx_bytes,tx_bytes,recorded_at) VALUES (?,?,?,?,?)
+                    ON CONFLICT(switch_id,port) DO UPDATE SET
+                    rx_bytes=excluded.rx_bytes,tx_bytes=excluded.tx_bytes,
+                    recorded_at=excluded.recorded_at""",baselines)
             if increments:
                 db.executemany("""UPDATE traffic_5m SET rx_bytes=rx_bytes+?,
                     tx_bytes=tx_bytes+? WHERE switch_id=? AND bucket=? AND port=?""",
