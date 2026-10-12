@@ -125,7 +125,7 @@ def parse_info(html: str) -> tuple[dict, dict]:
             cells = row.find_all("td", recursive=False)
             if len(cells) < 4:
                 continue
-            match = re.fullmatch(r"port\\s+(\\d+)", _value(cells[0]), re.I)
+            match = re.fullmatch(r"port\s+(\d+)", _value(cells[0]), re.I)
             if not match:
                 continue
             n = match.group(1)
