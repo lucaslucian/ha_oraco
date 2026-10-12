@@ -91,36 +91,46 @@ def _value(cell):
 
 
 def parse_info(html: str) -> tuple[dict, dict]:
-    """Parse device information and the port link table."""
+    """Read operational status from the switch overview, including form-embedded name."""
     soup = BeautifulSoup(html, "html.parser")
-    tables = soup.find_all("table")
     device = {}
     ports = {}
-    if tables:
-        for row in tables[0].find_all("tr"):
-            cells = row.find_all(["td", "th"], recursive=False)
-            for idx in range(0, len(cells) - 1, 2):
-                key = _value(cells[idx]).lower().rstrip(":")
-                value = _value(cells[idx + 1])
-                if "uptime" in key:
-                    device["uptime"] = value
-                elif "mac address" in key:
-                    device["mac"] = value
-                elif "firmware" in key:
-                    device["firmware"] = value
-                elif "model" in key or "device name" in key:
-                    device["model"] = value
-    if len(tables) > 1:
-        for row in tables[1].find_all("tr"):
+    mappings = {
+        "device name": "name", "device model": "model",
+        "sys uptime": "uptime", "system uptime": "uptime",
+        "firmware version": "firmware", "firmware": "firmware",
+        "mac address": "mac", "ip address": "ip_address", "netmask": "netmask",
+    }
+    for table in soup.find_all("table"):
+        for row in table.find_all("tr"):
+            cells = row.find_all(["th", "td"], recursive=False)
+            # Overview firmware has two label/value pairs per row.
+            for index in range(0, len(cells) - 1, 2):
+                label = _value(cells[index]).lower().strip().rstrip(":")
+                key = mappings.get(label)
+                if key is None:
+                    continue
+                cell = cells[index + 1]
+                field = cell.find("input", attrs={"name": "devName"})
+                value = field.get("value", "").strip() if field else _value(cell)
+                if value:
+                    device[key] = value
+        header = table.find("tr")
+        if header is None:
+            continue
+        headings = [_value(c).lower() for c in header.find_all(["th", "td"], recursive=False)]
+        if not ("port" in headings and any("link status" in h for h in headings)):
+            continue
+        for row in table.find_all("tr")[1:]:
             cells = row.find_all("td", recursive=False)
             if len(cells) < 4:
                 continue
-            match = re.search(r"(?:port\s*)?(\d+)", _value(cells[0]), re.I)
+            match = re.fullmatch(r"port\\s+(\\d+)", _value(cells[0]), re.I)
             if not match:
                 continue
             n = match.group(1)
             link = _value(cells[1])
-            ports[n] = {"port": n, "up": "up" in link.lower(), "link": link,
+            ports[n] = {"port": n, "up": link.lower() == "link up", "link": link,
                         "duplex": _value(cells[2]), "speed": _value(cells[3]),
                         "flow_control": _value(cells[4]) if len(cells) > 4 else ""}
     return device, ports
