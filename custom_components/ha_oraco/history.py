@@ -47,6 +47,11 @@ class HistoryDatabase:
                 PRIMARY KEY(switch_id,day,port)
             )""")
             db.execute("CREATE INDEX IF NOT EXISTS idx_5m_expiry ON traffic_5m(bucket)")
+            cols={row[1] for row in db.execute("PRAGMA table_info(traffic_5m)")}
+            for name in ("rx_bytes","tx_bytes"):
+                if name not in cols:
+                    db.execute(f"ALTER TABLE traffic_5m ADD COLUMN {name} INTEGER NOT NULL DEFAULT 0")
+
             # Upgrade existing installations: retain legacy raw history in the 5-minute series.
             db.execute("""INSERT OR IGNORE INTO traffic_5m
                 (switch_id,bucket,port,rx_sum,tx_sum,count,peak_rx,peak_tx)
@@ -91,6 +96,7 @@ class HistoryDatabase:
         daily = []
         rx_total = tx_total = 0.0
         bytes_rx = bytes_tx = 0
+        increments = {}
         for number, port in ports.items():
             number = str(number)
             rx, tx = port.get("rx_bps"), port.get("tx_bps")
@@ -109,6 +115,7 @@ class HistoryDatabase:
                     drx = counters[0]-previous[0]
                     dtx = counters[1]-previous[1]
                     daily.append((self.key,day,number,drx,dtx))
+                    increments[number]=(drx,dtx)
                     bytes_rx += drx
                     bytes_tx += dtx
                 self.previous_counters[number] = counters
@@ -118,6 +125,7 @@ class HistoryDatabase:
         buckets.append((self.key,bucket,"__total__",rx_total,tx_total,1,rx_total,tx_total))
         if daily:
             daily.append((self.key,day,"__total__",bytes_rx,bytes_tx))
+            increments["__total__"]=(bytes_rx,bytes_tx)
         with self._connect() as db:
             db.executemany("INSERT OR REPLACE INTO traffic VALUES(?,?,?,?,?)",raw_rows)
             db.executemany("""INSERT INTO traffic_5m VALUES(?,?,?,?,?,?,?,?)
@@ -125,6 +133,10 @@ class HistoryDatabase:
                 rx_sum=rx_sum+excluded.rx_sum,tx_sum=tx_sum+excluded.tx_sum,
                 count=count+1,peak_rx=MAX(peak_rx,excluded.peak_rx),
                 peak_tx=MAX(peak_tx,excluded.peak_tx)""",buckets)
+            if increments:
+                db.executemany("""UPDATE traffic_5m SET rx_bytes=rx_bytes+?,
+                    tx_bytes=tx_bytes+? WHERE switch_id=? AND bucket=? AND port=?""",
+                    [(values[0],values[1],self.key,bucket,num) for num,values in increments.items()])
             if daily:
                 db.executemany("""INSERT INTO daily_traffic VALUES(?,?,?,?,?)
                     ON CONFLICT(switch_id,day,port) DO UPDATE SET
@@ -267,7 +279,7 @@ class HistoryDatabase:
         hours = max(1,min(720,int(hours)))
         cutoff = (datetime.now(timezone.utc)-timedelta(hours=hours)).isoformat()
         with self._connect() as db:
-            rows = db.execute("""SELECT bucket,rx_sum,tx_sum,count,peak_rx,peak_tx
+            rows = db.execute("""SELECT bucket,rx_sum,tx_sum,count,peak_rx,peak_tx,rx_bytes,tx_bytes
                 FROM traffic_5m WHERE switch_id=? AND port=? AND bucket>=?
                 ORDER BY bucket""",(self.key,port,cutoff)).fetchall()
             if hours <= 24:
@@ -289,11 +301,26 @@ class HistoryDatabase:
             count=sum(r[3] for r in group)
             if count:
                 result.append({"timestamp":group[-1][0],
+                    "rx_bytes":sum(r[6] for r in group),
+                    "tx_bytes":sum(r[7] for r in group),
                     "rx":sum(r[1] for r in group)/count,
                     "tx":sum(r[2] for r in group)/count,
                     "peak_rx":max(r[4] for r in group),
                     "peak_tx":max(r[5] for r in group)})
         return result
+
+    def _period_totals(self,port,hours):
+        if port != "__total__" and not (port.isdecimal() and len(port)<=4):
+            return {"rx_bytes":0,"tx_bytes":0}
+        cutoff=(datetime.now(timezone.utc)-timedelta(hours=max(1,min(720,int(hours))))).isoformat()
+        with self._connect() as db:
+            values=db.execute("""SELECT COALESCE(SUM(rx_bytes),0),COALESCE(SUM(tx_bytes),0)
+                FROM traffic_5m WHERE switch_id=? AND port=? AND bucket>=?""",
+                (self.key,port,cutoff)).fetchone()
+        return {"rx_bytes":values[0],"tx_bytes":values[1]}
+
+    async def period_totals(self,port,hours):
+        return await self.hass.async_add_executor_job(self._period_totals,str(port),int(hours))
 
     async def series(self, port, hours):
         return await self.hass.async_add_executor_job(self._series, str(port), int(hours))
