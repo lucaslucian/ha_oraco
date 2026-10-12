@@ -83,6 +83,7 @@ class HoracoCoordinator(DataUpdateCoordinator[dict]):
                     history = await self.history_db.traffic_summary()
                     self.cache["peaks"] = history["peaks"]
                     self.cache["traffic_history"] = history["traffic_history"]
+                    self.cache["traffic_by_port"] = history["traffic_by_port"]
                 except Exception as err:
                     _LOGGER.warning("HoraInfo traffic history error: %s", type(err).__name__)
             self.diagnostics["last_success"] = datetime.now(timezone.utc).isoformat()
@@ -189,6 +190,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             previous = await coordinator.history_db.traffic_summary()
             coordinator.cache["peaks"] = previous["peaks"]
             coordinator.cache["traffic_history"] = previous["traffic_history"]
+            coordinator.cache["traffic_by_port"] = previous["traffic_by_port"]
         except Exception as err:
             _LOGGER.warning("HoraInfo history restore error: %s", type(err).__name__)
     if not coordinator.cache["mac"]:
