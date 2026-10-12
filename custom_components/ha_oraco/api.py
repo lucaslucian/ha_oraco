@@ -120,7 +120,8 @@ def parse_info(html: str) -> tuple[dict, dict]:
         # The OEM overview may close <th> labels with </td>. Extract only
         # supported metadata labels from the original table markup, because
         # html.parser can otherwise nest the cells and hide the second pair.
-        table_html = str(table)
+        # Retain the original tag boundaries; HTML parsers repair broken th/td nesting.
+        table_html = html
         for match in re.finditer(
             r"<th\\b[^>]*>(.*?)</(?:th|td)\\s*>\\s*<td\\b[^>]*>(.*?)</td\\s*>",
             table_html, re.I | re.S,
