@@ -275,7 +275,7 @@ class HaOracoPanel extends HTMLElement {
       const fmt = n => n >= 1e9 ? (n/1e9).toFixed(2)+" Gb/s" : n>=1e6 ? (n/1e6).toFixed(1)+" Mb/s" : n>=1e3 ? (n/1e3).toFixed(1)+" kb/s" : n.toFixed(0)+" b/s";
       const peak=number=>sw.peaks?.ports?.[number]||{};
       const row = (p) => '<tr><td>Porta '+this.escape(p.port)+'</td><td><span class="dot '+(p.up?"ok":"")+'"></span>'+(p.up?"Ativa":"Inativa")+'</td><td>'+this.escape(p.speed)+'</td><td>'+fmt(Number(p.rx_bps)||0)+'</td><td>'+fmt(Number(p.tx_bps)||0)+'</td><td>'+fmt(peak(p.port).rx_bps||0)+'</td><td>'+fmt(peak(p.port).tx_bps||0)+'</td></tr>';
-      body += '<div class="heading"><div class="switch-subtitle">Equipamento monitorado · '+this.escape(sw.device?.name||sw.device?.model||sw.host)+'</div></div>';
+
       if (this.tab === "overview") {
         body += '<div class="stats"><section class="card metric"><small>Portas ativas</small><strong>'+online+' / '+ps.length+'</strong></section><section class="card metric"><small>Tráfego RX</small><strong>'+fmt(rate("rx"))+'</strong></section><section class="card metric"><small>Tráfego TX</small><strong>'+fmt(rate("tx"))+'</strong></section><section class="card metric"><small>Firmware</small><strong class="small">'+this.escape(sw.device?.firmware)+'</strong></section></div>';
         body += '<div class="peak-strip"><span>Picos registrados nos últimos 30 dias</span><strong>↓ RX '+fmt(sw.peaks?.total?.rx_bps||0)+'</strong><strong>↑ TX '+fmt(sw.peaks?.total?.tx_bps||0)+'</strong><span class="overview-macs">'+this.escape(sw.mac?.mac_known??0)+' MACs conhecidos</span></div>';
@@ -380,7 +380,7 @@ class HaOracoPanel extends HTMLElement {
     this.shadowRoot.innerHTML = `<style>
       :host { display:block; min-height:100%; color:var(--primary-text-color); background:var(--primary-background-color); font-family:Roboto,"Arial",sans-serif; }
       *{box-sizing:border-box} main{max-width:1480px;margin:auto;padding:24px;} header{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:22px}
-      .brand{display:flex;align-items:center;gap:12px}.brand img{width:38px;height:38px;object-fit:contain} h1{font-size:24px;font-weight:500;margin:0}h2{font-size:19px;font-weight:500;margin:0}h3{font-size:15px;font-weight:500;margin:0 0 18px}
+      .brand-wrap{display:flex;flex-direction:column;gap:4px}.brand-subtitle{font-size:12px;color:var(--secondary-text-color);padding-left:50px}.brand{display:flex;align-items:center;gap:12px}.brand img{width:38px;height:38px;object-fit:contain} h1{font-size:24px;font-weight:500;margin:0}h2{font-size:19px;font-weight:500;margin:0}h3{font-size:15px;font-weight:500;margin:0 0 18px}
       nav{display:flex;gap:6px;overflow-x:auto;border-bottom:1px solid var(--divider-color);margin-bottom:24px}
       button{font:inherit;cursor:pointer;background:transparent;color:var(--secondary-text-color);border:0;border-bottom:2px solid transparent;padding:13px 15px;white-space:nowrap}
       button.selected{color:var(--primary-color);border-color:var(--primary-color)}button:hover{color:var(--primary-text-color)}
@@ -462,7 +462,7 @@ class HaOracoPanel extends HTMLElement {
       .chart-legend{display:flex;gap:17px;flex-wrap:wrap;font-size:11px;color:var(--secondary-text-color);margin:3px 0 0 22px}
       .traffic-chart{max-height:190px}.card{border-radius:14px}.metric{min-width:0}.metric strong{overflow-wrap:anywhere}
       @media(max-width:950px){.stats{grid-template-columns:repeat(2,minmax(0,1fr))}.columns{grid-template-columns:1fr}}@media(max-width:500px){main{padding:14px}.stats{gap:8px}.card{padding:14px}.metric strong{font-size:20px}}
-    </style><main><header><h1 class="brand"><img src="/ha_oraco_static/brand/icon.svg" alt="" aria-hidden="true"/> HoraInfo</h1><button class="refresh" id="refresh">Atualizar</button></header>
+    </style><main><header><div class="brand-wrap"><h1 class="brand"><img src="/ha_oraco_static/brand/icon.svg" alt="" aria-hidden="true"/> HoraInfo</h1><div class="brand-subtitle">${this.escape(switches.length===1?(switches[0].device?.name||switches[0].device?.model||switches[0].host):switches.length+" equipamentos monitorados")}</div></div><button class="refresh" id="refresh">Atualizar</button></header>
     <nav>${tabs.map(([id,label])=>'<button data-tab="'+id+'" class="'+(id===this.tab?"selected":"")+'">'+label+'</button>').join("")}</nav>
     ${body}</main>`;
     this.shadowRoot.querySelectorAll("[data-tab]").forEach(el => el.addEventListener("click", () => {this.tab=el.dataset.tab;this.render();this.loadCurrentCharts()}));
