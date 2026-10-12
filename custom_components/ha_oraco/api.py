@@ -136,7 +136,7 @@ def parse_info(html: str) -> tuple[dict, dict]:
             if not value:
                 continue
             if key == "uptime":
-                duration = re.fullmatch(r"(\\d+)Day(\\d+)Hour(\\d+)Minute(\\d+)Second", value, re.I)
+                duration = re.fullmatch(r"(\d+)Day(\d+)Hour(\d+)Minute(\d+)Second", value, re.I)
                 if duration:
                     days, hours, minutes, seconds = map(int, duration.groups())
                     device["uptime_raw"] = value
