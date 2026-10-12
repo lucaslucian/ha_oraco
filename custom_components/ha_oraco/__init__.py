@@ -22,6 +22,7 @@ from .protection import parse_isolation, parse_stp_ports, parse_storm_control
 from .bridging import parse_stp_global, parse_aggregation
 from .panel import register_panel
 from .history import HistoryDatabase
+from .traffic_guard import counter_delta, valid_counter
 
 _LOGGER = logging.getLogger(__name__)
 PLATFORMS = [Platform.SENSOR, Platform.BINARY_SENSOR]
@@ -52,16 +53,27 @@ class HoracoCoordinator(DataUpdateCoordinator[dict]):
             if not ports:
                 raise UpdateFailed("No ports found on switch info page")
             stats = parse_stats(await self.client.get("/port.cgi?page=stats"))
+            counter_warnings = {}
+            elapsed = now - self.prev_time if self.prev_time is not None else None
             for number, port in ports.items():
                 port.update(stats.get(number, {}))
                 old = self.prev_bytes.get(number, {})
-                if self.prev_time is not None and now > self.prev_time:
-                    for side in ("rx", "tx"):
-                        field = f"{side}_bytes"
-                        if field in port and field in old and port[field] >= old[field]:
-                            port[f"{side}_bps"] = round(8 * (port[field] - old[field]) / (now - self.prev_time), 2)
-                self.prev_bytes[number] = {key: port[key] for key in ("rx_bytes", "tx_bytes") if key in port}
+                new_baseline = {}
+                for side in ("rx", "tx"):
+                    field = f"{side}_bytes"
+                    current = port.get(field)
+                    if not valid_counter(current):
+                        counter_warnings[f"{number}:{side}"] = "missing_or_invalid"
+                        continue
+                    new_baseline[field] = current
+                    delta, reason = counter_delta(old.get(field), current, elapsed, port.get("speed"))
+                    if reason is None:
+                        port[f"{side}_bps"] = round(8 * delta / elapsed, 2)
+                    elif reason not in ("baseline",):
+                        counter_warnings[f"{number}:{side}"] = reason
+                self.prev_bytes[number] = new_baseline
             self.prev_time = now
+            self.diagnostics["traffic_counters"] = counter_warnings
             for number, port in ports.items():
                 peaks = self.peak_rates["ports"].setdefault(number, {"rx_bps": 0, "tx_bps": 0})
                 for direction in ("rx_bps", "tx_bps"):
