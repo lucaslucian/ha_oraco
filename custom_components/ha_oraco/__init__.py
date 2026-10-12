@@ -18,7 +18,6 @@ from .vendors import VendorCache
 from .advanced import parse_sfp, parse_dhcp, parse_igmp, parse_jumbo
 from .topology import build_topology
 from .vlans import parse_port_vlans
-from .firmware import parse_firmware
 from .protection import parse_isolation, parse_stp_ports, parse_storm_control
 from .bridging import parse_stp_global, parse_aggregation
 from .panel import register_panel
@@ -104,7 +103,6 @@ class HoracoCoordinator(DataUpdateCoordinator[dict]):
                 ("igmp", 300, "/igmp.cgi?page=dump", parse_igmp),
                 ("jumbo", 3600, "/fwd.cgi?page=jumboframe", parse_jumbo),
                 ("vlan_ports", INTERVALS["vlans"], "/vlan.cgi?page=port_based", parse_port_vlans),
-                ("firmware_page", INTERVALS["static"], "/fwug.cgi", parse_firmware),
                 ("isolation", 600, "/port.cgi?page=isolation", parse_isolation),
                 ("stp_ports", 600, "/loop.cgi?page=stp_port", parse_stp_ports),
                 ("storm_control", 600, "/fwd.cgi?page=storm_ctrl", parse_storm_control),
@@ -115,11 +113,8 @@ class HoracoCoordinator(DataUpdateCoordinator[dict]):
                 if name not in self.last or now - self.last[name] >= interval:
                     try:
                         parsed = parser(await self.client.get(path))
-                        if name == "firmware_page":
-                            self.cache["device"]["firmware"] = parsed["version"]
-                        else:
-                            self.cache["sfp" if name == "sfp" else "network"][name] = parsed
-                        if self.history_db and name != "firmware_page":
+                        self.cache["sfp" if name == "sfp" else "network"][name] = parsed
+                        if self.history_db:
                             await self.history_db.record_snapshot(name, parsed)
                         self.last[name] = now
                         self.diagnostics["endpoints"][name] = {"status": "ok", "last_success": datetime.now(timezone.utc).isoformat()}
