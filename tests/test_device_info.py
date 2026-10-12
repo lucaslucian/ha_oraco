@@ -24,7 +24,8 @@ def test_multicolumn_device_info_and_ports():
     assert device["model"]=="HC-SWTGW218AS"
     assert device["name"]=="HC-SWTGW218AS"
     assert device["firmware"]=="V200.2.4"
-    assert device["uptime"]=="0Day1Hour0Minute17Second"
+    assert device["uptime"]=="1 h 17 s"
+    assert device["uptime_seconds"]==3617
     assert device["mac"]=="1C:2A:A3:31:D9:18"
     assert device["ip_address"]=="10.0.0.254"
     assert device["netmask"]=="255.255.0.0"
