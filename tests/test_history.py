@@ -176,3 +176,26 @@ def test_unknown_dates_do_not_replace_known_mac_timestamps():
         assert saved["mac_history_entries"][0]["last_seen"]=="2026-01-02T00:00:00+00:00"
     with TemporaryDirectory() as root:
         asyncio.run(scenario(root))
+
+def test_daily_totals_reject_resets_and_impossible_jumps():
+    async def scenario(root):
+        db=load().HistoryDatabase(FakeHass(root),"unsafe_counters")
+        await db.initialize()
+        base={"speed":"100M","rx_bps":1000,"tx_bps":1000,
+              "rx_bytes":1000,"tx_bytes":1000}
+        await db.record_traffic({"2":base})
+        await asyncio.sleep(0.05)
+        await db.record_traffic({"2":{**base,"rx_bytes":2000,"tx_bytes":2000}})
+        # One counter resets; the other advances safely.
+        await asyncio.sleep(0.05)
+        await db.record_traffic({"2":{**base,"rx_bytes":25,"tx_bytes":3000}})
+        # The new RX baseline is 25, so the next valid sample counts from 25.
+        await asyncio.sleep(0.05)
+        await db.record_traffic({"2":{**base,"rx_bytes":125,"tx_bytes":10**11}})
+        await asyncio.sleep(0.05)
+        await db.record_traffic({"2":{**base,"rx_bytes":225,"tx_bytes":10**11+500}})
+        total=(await db.daily_totals("2"))[0]
+        assert total["rx_bytes"] == 1200
+        assert total["tx_bytes"] == 2500
+    with TemporaryDirectory() as root:
+        asyncio.run(scenario(root))
