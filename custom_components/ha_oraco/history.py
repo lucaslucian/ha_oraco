@@ -6,6 +6,8 @@ No switch credentials are stored here. Do not store user-provided SQL fragments.
 from __future__ import annotations
 
 import sqlite3
+import json
+import hashlib
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -36,6 +38,11 @@ class HistoryDatabase:
                 port TEXT, vendor TEXT, classification TEXT,
                 first_seen TEXT, last_seen TEXT,
                 PRIMARY KEY (switch_id,vlan,mac)
+            )""")
+            db.execute("""CREATE TABLE IF NOT EXISTS snapshots (
+                switch_id TEXT NOT NULL, kind TEXT NOT NULL,
+                timestamp TEXT NOT NULL, checksum TEXT NOT NULL, payload TEXT NOT NULL,
+                PRIMARY KEY (switch_id,kind,timestamp)
             )""")
             db.execute("""CREATE INDEX IF NOT EXISTS idx_mac_seen
                 ON mac_inventory(switch_id,last_seen)""")
@@ -133,3 +140,21 @@ class HistoryDatabase:
 
     async def inventory_summary(self):
         return await self.hass.async_add_executor_job(self._inventory_summary)
+
+    def _record_snapshot(self, kind, payload):
+        allowed = ("sfp", "vlan_ports", "isolation", "stp_ports", "storm_control",
+                   "stp_global", "aggregation")
+        if kind not in allowed:
+            return
+        encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
+        digest = hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+        stamp = datetime.now(timezone.utc).isoformat()
+        cutoff = (datetime.now(timezone.utc)-timedelta(days=90)).isoformat()
+        with self._connect() as db:
+            latest = db.execute("SELECT checksum FROM snapshots WHERE switch_id=? AND kind=? ORDER BY timestamp DESC LIMIT 1", (self.key,kind)).fetchone()
+            if latest is None or latest[0] != digest:
+                db.execute("INSERT INTO snapshots (switch_id,kind,timestamp,checksum,payload) VALUES (?,?,?,?,?)", (self.key,kind,stamp,digest,encoded))
+            db.execute("DELETE FROM snapshots WHERE timestamp < ?", (cutoff,))
+
+    async def record_snapshot(self, kind, payload):
+        await self.hass.async_add_executor_job(self._record_snapshot,kind,payload)
