@@ -16,7 +16,7 @@
 
 Integração experimental **somente leitura** para monitorar switches Horaco e OEM com interface CGI Realtek no Home Assistant. A integração usa HACS e registra um painel na barra lateral, sem Docker ou Lovelace customizado.
 
-## Estado do desenvolvimento (0.4.19 — experimental)
+## Estado do desenvolvimento (0.4.20 — experimental)
 
 | Função | Implementação | Requer validação no switch |
 |---|---|---|
@@ -130,3 +130,8 @@ A partir da 0.4.17, a paginação da tabela MAC também renova uma sessão HTTP 
 ### Proteção de contadores de tráfego (0.4.19)
 
 As amostras RX/TX são aceitas somente quando os contadores de bytes são válidos (inteiros de 64 bits), o tempo entre coletas é positivo e não ultrapassa 120 segundos e a diferença cabe na velocidade física negociada da porta (com margem de 25%). Saltos acima do limite, contadores zerados/reiniciados, possível rollover ou falhas de coleta não geram picos nem volume fictício: um novo valor de referência é estabelecido para a próxima amostra. RX e TX são validados separadamente, para que um problema em uma direção não invalide a outra. O banco SQLite aplica independentemente a mesma regra e mantém a última referência mesmo quando a primeira coleta ainda não permite calcular uma velocidade. Os contadores de eventos rejeitados ficam em `diagnostics.traffic_counters` para diagnóstico. Não é possível recuperar com exatidão o volume entre leituras interrompidas ou contadores reiniciados, e essas lacunas não são estimadas.
+
+
+### Correções de compatibilidade OEM (0.4.20)
+
+Algumas revisões do firmware fecham etiquetas `<th>` usando `</td>` e apresentam a primeira linha do transceptor sem `<tr>` inicial. Os parsers de `/info.cgi` e `/transceiver.cgi` agora extraem os pares de campos do HTML original com tolerância a esse formato, preservando modelo, firmware, uptime, MAC e informações do módulo óptico. O subtítulo do equipamento foi movido para abaixo do nome HoraInfo no cabeçalho. A suíte automatizada inclui casos de regressão baseados nessas respostas reais.
