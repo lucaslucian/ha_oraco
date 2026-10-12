@@ -19,7 +19,7 @@ FIELDS = {
 async def async_setup_entry(hass, entry, async_add_entities):
     c = hass.data[DOMAIN][entry.entry_id]
     entities = [OracoSensor(c, n, k) for n in c.data["ports"] for k in FIELDS]
-    entities += [OracoSensor(c, None, key) for key in ("model", "firmware", "uptime", "mac", "ports_up", "mac_current", "mac_known", "mac_local", "sfp_temperature", "sfp_voltage", "sfp_current", "sfp_rx_dbm", "sfp_tx_dbm")]
+    entities += [OracoSensor(c, None, key) for key in ("model", "firmware", "uptime", "mac", "ports_up", "mac_current", "mac_known", "mac_local", "mac_local_known", "sfp_temperature", "sfp_voltage", "sfp_current", "sfp_rx_dbm", "sfp_tx_dbm")]
     async_add_entities(entities)
 
 
@@ -33,6 +33,10 @@ class OracoSensor(CoordinatorEntity, SensorEntity):
         self._attr_unique_id = f"{DOMAIN}_{coordinator.client.host}_{port or 'device'}_{key}"
         self._attr_device_info = port_info(coordinator, port) if port else device_info(coordinator)
         name, unit, state_class = FIELDS.get(key, (key.replace("_", " ").title(), None, None))
+        if key == "mac_local":
+            name = "MACs privados (atuais)"
+        elif key == "mac_local_known":
+            name = "MACs privados (histórico)"
         self._attr_name = name
         self._attr_native_unit_of_measurement = unit
         self._attr_state_class = state_class
@@ -70,7 +74,7 @@ class OracoSensor(CoordinatorEntity, SensorEntity):
     def native_value(self):
         data = self.coordinator.data
         if self.port is None:
-            if self.key in ("mac_current", "mac_known", "mac_local"):
+            if self.key in ("mac_current", "mac_known", "mac_local", "mac_local_known"):
                 return data.get("mac", {}).get(self.key)
             if self.key.startswith("sfp_"):
                 fields = {"sfp_temperature": "temperature_c", "sfp_voltage": "voltage_v",
