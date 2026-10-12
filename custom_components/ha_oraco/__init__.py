@@ -140,7 +140,7 @@ class HoracoCoordinator(DataUpdateCoordinator[dict]):
                     for page in range(2, pages + 1):
                         more, _ = parse_mac_page(await self.client.mac_page(page))
                         rows.extend(more)
-                    await self.inventory.observe(rows, self.vendors)
+                    legacy_saved = await self.inventory.observe(rows, self.vendors)
                     self.cache["mac"] = self.inventory.summary()
                     if self.history_db:
                         try:
@@ -150,6 +150,8 @@ class HoracoCoordinator(DataUpdateCoordinator[dict]):
                             _LOGGER.warning("HoraInfo MAC history error: %s", type(err).__name__)
                     self.last["mac"] = now
                     self.diagnostics["endpoints"]["mac"] = {"status": "ok", "last_success": datetime.now(timezone.utc).isoformat()}
+                    if not legacy_saved:
+                        self.diagnostics["endpoints"]["mac"]["history_error"] = "LegacyStoreSaveFailed"
                 except Exception as err:
                     _LOGGER.debug("MAC table unavailable on %s: %s", self.client.host, err)
                     self.diagnostics["endpoints"]["mac"] = {"status": "unavailable", "error": type(err).__name__}
