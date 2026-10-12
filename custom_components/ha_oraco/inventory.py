@@ -24,13 +24,26 @@ class MacInventory:
             item["last_seen"] = timestamp
             item["moved_from"] = previous.get("port") if previous.get("port") != item["port"] else None
             if vendors:
-                item["vendor"] = vendors.lookup(item["mac"])
+                resolved = vendors.lookup(item["mac"])
+                item["vendor"] = previous.get("vendor") if resolved == "Desconhecido" and previous.get("vendor") not in (None, "Desconhecido") else resolved
             current[identity] = item
         self.current = list(current.values())
         self.history.update(current)
         recent = sorted(self.history.items(), key=lambda pair: pair[1]["last_seen"], reverse=True)
         self.history = dict(recent[:2000])
         self.last_scan = timestamp
+        await self.store.async_save({"history": self.history})
+
+    async def reclassify(self, vendors):
+        """Revalidate both current and historical identities after IEEE refresh."""
+        for record in self.history.values():
+            name = vendors.lookup(record["mac"])
+            if name != "Desconhecido":
+                record["vendor"] = name
+        for record in self.current:
+            name = vendors.lookup(record["mac"])
+            if name != "Desconhecido":
+                record["vendor"] = name
         await self.store.async_save({"history": self.history})
 
     def summary(self):
@@ -41,4 +54,5 @@ class MacInventory:
             "mac_last_scan": self.last_scan,
             "mac_entries": self.current[:25],
             "mac_truncated": len(self.current) > 25,
+            "mac_history_entries": sorted(self.history.values(), key=lambda r: r.get("last_seen", ""), reverse=True)[:200],
         }
