@@ -114,6 +114,16 @@ def parse_info(html: str) -> tuple[dict, dict]:
                 field = cell.find("input", attrs={"name": "devName"})
                 value = field.get("value", "").strip() if field else _value(cell)
                 if value:
+                    if key == "uptime":
+                        duration = re.fullmatch(r"(\d+)Day(\d+)Hour(\d+)Minute(\d+)Second", value, re.I)
+                        if duration:
+                            days, hours, minutes, seconds = map(int, duration.groups())
+                            device["uptime_raw"] = value
+                            device["uptime_seconds"] = days * 86400 + hours * 3600 + minutes * 60 + seconds
+                            readable = [f"{n} {unit}" for n, unit in
+                                        ((days, "d"), (hours, "h"), (minutes, "min"), (seconds, "s"))
+                                        if n]
+                            value = " ".join(readable) or "0 s"
                     device[key] = value
         header = table.find("tr")
         if header is None:
