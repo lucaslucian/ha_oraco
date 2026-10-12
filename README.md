@@ -16,7 +16,7 @@
 
 Integração experimental **somente leitura** para monitorar switches Horaco e OEM com interface CGI Realtek no Home Assistant. A integração usa HACS e registra um painel na barra lateral, sem Docker ou Lovelace customizado.
 
-## Estado do desenvolvimento (0.4.14 — experimental)
+## Estado do desenvolvimento (0.4.16 — experimental)
 
 | Função | Implementação | Requer validação no switch |
 |---|---|---|
@@ -118,3 +118,8 @@ Se a página SFP+ não responder, o HoraInfo informa **diagnóstico indisponíve
 ### Identidade visual e ícones
 
 A integração fornece `brand/icon.png`, `brand/icon@2x.png`, `brand/logo.png` e `brand/logo@2x.png`, inclusive variações para tema escuro. São gerados a partir dos SVGs em `assets/` e utilizados localmente pelo Home Assistant 2026.3 ou posterior. O HACS pode continuar exibindo o placeholder **Icon not available** na lista de downloads ou na entidade de atualização devido à implementação atual de sua interface, que pode consultar o CDN antigo em vez dos ícones locais. Isso não indica ausência dos arquivos no HoraInfo. Após instalar uma nova versão pelo HACS, reinicie o Home Assistant para atualizar os recursos de marca.
+
+
+### Integridade do histórico (0.4.16)
+
+A migração de amostras antigas para intervalos de cinco minutos é executada uma única vez por arquivo SQLite, sem reimportar linhas em cada reinício. Os últimos contadores de bytes são preservados de forma temporária entre reinícios rápidos da integração (até três minutos) para evitar lacunas desnecessárias. Se o equipamento ficar indisponível por mais tempo ou reiniciar os próprios contadores, um novo ponto de referência é estabelecido sem inventar consumo durante a ausência. As atualizações do histórico MAC preservam as datas já conhecidas quando novas observações não as apresentam. Falhas na escrita do histórico ou reclassificação de fabricantes são isoladas do fluxo de monitoramento, e o diagnóstico indica o problema em vez de reportar falsamente a consulta como indisponível.
