@@ -9,6 +9,7 @@ from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_PORT, CONF_USERNA
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.helpers.event import async_track_time_interval
 from .api import HoracoClient, parse_info, parse_stats
 from .const import DOMAIN, INTERVALS
 from .mac import parse_mac_page
@@ -231,6 +232,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             finally:
                 data["_vendor_refresh_scheduled"] = False
         hass.async_create_task(refresh_oui())
+        if "_oui_daily_unsub" not in data:
+            async def daily_oui(_now):
+                if not data.get("_vendor_refresh_scheduled"):
+                    data["_vendor_refresh_scheduled"] = True
+                    await refresh_oui()
+            data["_oui_daily_unsub"] = async_track_time_interval(
+                hass, daily_oui, timedelta(days=1)
+            )
     return True
 
 
@@ -241,5 +250,10 @@ async def _reload(hass, entry):
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if ok:
-        hass.data[DOMAIN].pop(entry.entry_id, None)
+        data = hass.data[DOMAIN]
+        data.pop(entry.entry_id, None)
+        if not any(isinstance(v, HoracoCoordinator) for v in data.values()):
+            unsubscribe = data.pop("_oui_daily_unsub", None)
+            if unsubscribe:
+                unsubscribe()
     return ok
