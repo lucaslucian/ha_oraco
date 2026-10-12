@@ -199,3 +199,18 @@ def test_daily_totals_reject_resets_and_impossible_jumps():
         assert total["tx_bytes"] == 2500
     with TemporaryDirectory() as root:
         asyncio.run(scenario(root))
+
+def test_old_snapshot_events_not_hidden_by_zero_change_daily_summary():
+    async def scenario(root):
+        db=load().HistoryDatabase(FakeHass(root),"history_migration")
+        await db.initialize()
+        await db.record_snapshot("stp_ports",{"ports":{"1":{"state":"Forwarding"}}})
+        from sqlite3 import connect
+        with connect(db.path) as conn:
+            conn.execute("UPDATE snapshot_daily SET changes=0 WHERE switch_id=?",("history_migration",))
+        rows=await db.snapshot_history("stp_ports")
+        assert len(rows)==1
+        assert rows[0]["changes"]==1
+        assert len(rows[0]["events"])==1
+    with TemporaryDirectory() as root:
+        asyncio.run(scenario(root))
