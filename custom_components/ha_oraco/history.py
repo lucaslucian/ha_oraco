@@ -47,6 +47,22 @@ class HistoryDatabase:
                 PRIMARY KEY(switch_id,day,port)
             )""")
             db.execute("CREATE INDEX IF NOT EXISTS idx_5m_expiry ON traffic_5m(bucket)")
+            # Upgrade existing installations: retain legacy raw history in the 5-minute series.
+            db.execute("""INSERT OR IGNORE INTO traffic_5m
+                (switch_id,bucket,port,rx_sum,tx_sum,count,peak_rx,peak_tx)
+                SELECT switch_id,
+                    substr(timestamp,1,14) ||
+                    printf('%02d',CAST(substr(timestamp,15,2) AS INTEGER)/5*5) ||
+                    ':00+00:00',
+                    port,SUM(rx_bps),SUM(tx_bps),COUNT(*),MAX(rx_bps),MAX(tx_bps)
+                FROM traffic
+                WHERE rx_bps>=0 AND tx_bps>=0
+                GROUP BY switch_id,
+                    substr(timestamp,1,14) ||
+                    printf('%02d',CAST(substr(timestamp,15,2) AS INTEGER)/5*5) ||
+                    ':00+00:00',port
+            """)
+
             db.execute("""CREATE TABLE IF NOT EXISTS mac_inventory (
                 switch_id TEXT NOT NULL, vlan TEXT NOT NULL, mac TEXT NOT NULL,
                 port TEXT, vendor TEXT, classification TEXT,
