@@ -130,7 +130,7 @@ class HaOracoPanel extends HTMLElement {
   render() {
     if (!this.shadowRoot) return;
     const switches = this.data?.switches || [];
-    const tabs = [["overview","Visão geral"],["ports","Portas"],["sfp","SFP+"],["mac","Dispositivos"],["vlan","VLANs"],["topology","Mapa de rede"],["system","Sistema"]];
+    const tabs = [["overview","Visão geral"],["ports","Portas"],["sfp","SFP+"],["mac","Dispositivos"],["vlan","VLANs"],["protection","Proteções"],["topology","Mapa de rede"],["system","Sistema"]];
     let body = this.error ? '<section class="card">Não foi possível consultar os dados. '+this.escape(this.error)+'</section>' : "";
     if (!switches.length && !this.error) body = '<section class="card">Nenhum switch configurado ou aguardando dados.</section>';
     for (const sw of switches) {
@@ -151,6 +151,23 @@ class HaOracoPanel extends HTMLElement {
       else if(this.tab === "sfp") body += '<section class="card"><h3>Transceptor óptico</h3><p class="section-subtitle">Medições e dados de identificação disponíveis no firmware</p>'+this.renderSfp(sw)+'</section>';
       else if(this.tab === "mac") body += '<section class="card"><h3>MACs observados · '+this.escape(sw.mac?.mac_current ?? "—")+'</h3><p>Mostrando até 25 MACs atuais; filtros aplicados localmente. Histórico preservado na integração.</p><input id="mac-filter" type="search" placeholder="Pesquisar MAC, porta, VLAN ou fabricante" value="'+this.escape(this.macFilter)+'" aria-label="Filtrar endereços MAC"><div class="scroll"><table><thead><tr><th>MAC</th><th>Porta</th><th>VLAN</th><th>Fabricante / classificação</th></tr></thead><tbody>'+(sw.mac?.mac_entries||[]).filter(e=>JSON.stringify(e).toLowerCase().includes(this.macFilter.toLowerCase())).map(e=>'<tr><td>'+this.escape(e.mac)+'</td><td>'+this.escape(e.port)+'</td><td>'+this.escape(e.vlan)+'</td><td>'+this.escape(e.vendor || e.classification)+'</td></tr>').join("")+'</tbody></table></div></section>';
       else if(this.tab === "topology") body += '<section class="card"><h3>Mapa lógico da rede</h3>'+this.topologyMap(sw)+'</section>';
+      else if(this.tab === "protection") {
+        const net=sw.network||{};
+        const iso=Object.values(net.isolation?.ports||{}).sort((a,b)=>Number(a.port)-Number(b.port));
+        const stp=Object.values(net.stp_ports?.ports||{}).sort((a,b)=>Number(a.port)-Number(b.port));
+        const storm=Object.values(net.storm_control?.ports||{}).sort((a,b)=>Number(a.port)-Number(b.port));
+        const status=rows=>rows.length?'':'<p class="empty">Sem dados disponíveis para este recurso.</p>';
+        const tbl=(cols,rows)=>'<div class="scroll"><table><thead><tr>'+cols.map(c=>'<th>'+c+'</th>').join('')+'</tr></thead><tbody>'+rows.join('')+'</tbody></table></div>';
+        body+='<section class="card"><h3>Isolamento de portas</h3><p class="section-subtitle">Listas apresentadas pelo firmware; o sentido das restrições ainda requer validação.</p>'+status(iso)
+          +(iso.length?tbl(['Porta','Lista informada','Portas listadas'],iso.map(p=>'<tr><td>Porta '+this.escape(p.port)+'</td><td>'+this.escape(p.raw_list)+'</td><td>'+this.escape(p.listed_ports?.join(', '))+'</td></tr>')):'')+'</section>';
+        body+='<section class="card"><h3>Spanning Tree — portas</h3><p class="section-subtitle">Estado, função, custo e parâmetros efetivos de STP.</p>'+status(stp)
+          +(stp.length?tbl(['Porta','Estado','Função','Custo configurado','Custo efetivo','Prioridade','P2P efetivo','Edge efetivo'],stp.map(p=>
+            '<tr><td>Porta '+this.escape(p.port)+'</td><td>'+this.escape(p.state)+'</td><td>'+this.escape(p.role)+'</td><td>'+this.escape(p.path_cost_config)+'</td><td>'+this.escape(p.path_cost_actual)+'</td><td>'+this.escape(p.priority)+'</td><td>'+this.escape(p.p2p_actual)+'</td><td>'+this.escape(p.edge_actual)+'</td></tr>')):'')+'</section>';
+        const stormValue=v=>v===null||v===undefined?'Desativado':this.escape(v)+' kbit/s';
+        body+='<section class="card"><h3>Controle de tempestades</h3><p class="section-subtitle">Limites configurados por interface. Desativado não significa tráfego zero.</p>'+status(storm)
+          +(storm.length?tbl(['Porta','Broadcast','Multicast conhecido','Multicast desconhecido','Unicast desconhecido'],storm.map(p=>
+            '<tr><td>Porta '+this.escape(p.port)+'</td><td>'+stormValue(p.broadcast_kbps)+'</td><td>'+stormValue(p.known_multicast_kbps)+'</td><td>'+stormValue(p.unknown_multicast_kbps)+'</td><td>'+stormValue(p.unknown_unicast_kbps)+'</td></tr>')):'')+'</section>';
+      }
       else if(this.tab === "system") body += '<section class="card"><h3>Informações do equipamento</h3>'+Object.entries(sw.device||{}).map(([k,v])=>'<div class="kv"><span>'+this.escape(k)+'</span><b>'+this.escape(v)+'</b></div>').join("")+'<h3>Saúde dos endpoints</h3>'+Object.entries(sw.diagnostics?.endpoints||{}).map(([k,v])=>'<div class="kv"><span>'+this.escape(k)+'</span><b>'+this.escape(v.status)+'</b></div>').join("")+'</section>';
       else if(this.tab === "vlan") {
         const vlans=sw.network?.vlan_ports?.ports||{};
