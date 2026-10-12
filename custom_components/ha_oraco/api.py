@@ -193,9 +193,14 @@ def parse_stats(html: str) -> dict:
                 try:
                     if "-" in raw and len(raw.split("-")) == 2:
                         high, low = (int(x) for x in raw.split("-"))
+                        if not (0 <= high <= 0xFFFFFFFF and 0 <= low <= 0xFFFFFFFF):
+                            continue
                         item[field] = high * (2**32) + low
                     else:
-                        item[field] = int(raw, 0) if raw.lower().startswith("0x") else int(raw)
+                        value = int(raw, 0) if raw.lower().startswith("0x") else int(raw)
+                        if not 0 <= value < 2**64:
+                            continue
+                        item[field] = value
                 except ValueError:
                     pass
             result[match.group(1)] = item
