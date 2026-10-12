@@ -117,29 +117,33 @@ def parse_info(html: str) -> tuple[dict, dict]:
         "mac address": "mac", "ip address": "ip_address", "netmask": "netmask",
     }
     for table in soup.find_all("table"):
-        for row in table.find_all("tr"):
-            cells = row.find_all(["th", "td"], recursive=False)
-            # Overview firmware has two label/value pairs per row.
-            for index in range(0, len(cells) - 1, 2):
-                label = _value(cells[index]).lower().strip().rstrip(":")
-                key = mappings.get(label)
-                if key is None:
-                    continue
-                cell = cells[index + 1]
-                field = cell.find("input", attrs={"name": "devName"})
-                value = field.get("value", "").strip() if field else _value(cell)
-                if value:
-                    if key == "uptime":
-                        duration = re.fullmatch(r"(\d+)Day(\d+)Hour(\d+)Minute(\d+)Second", value, re.I)
-                        if duration:
-                            days, hours, minutes, seconds = map(int, duration.groups())
-                            device["uptime_raw"] = value
-                            device["uptime_seconds"] = days * 86400 + hours * 3600 + minutes * 60 + seconds
-                            readable = [f"{n} {unit}" for n, unit in
-                                        ((days, "d"), (hours, "h"), (minutes, "min"), (seconds, "s"))
-                                        if n]
-                            value = " ".join(readable) or "0 s"
-                    device[key] = value
+        # The OEM overview may close <th> labels with </td>. Extract only
+        # supported metadata labels from the original table markup, because
+        # html.parser can otherwise nest the cells and hide the second pair.
+        table_html = str(table)
+        for match in re.finditer(
+            r"<th\\b[^>]*>(.*?)</(?:th|td)\\s*>\\s*<td\\b[^>]*>(.*?)</td\\s*>",
+            table_html, re.I | re.S,
+        ):
+            label = BeautifulSoup(match.group(1), "html.parser").get_text(" ", strip=True).lower().rstrip(":")
+            key = mappings.get(label)
+            if key is None:
+                continue
+            cell = BeautifulSoup(match.group(2), "html.parser")
+            field = cell.find("input", attrs={"name": "devName"})
+            value = field.get("value", "").strip() if field else cell.get_text(" ", strip=True)
+            if not value:
+                continue
+            if key == "uptime":
+                duration = re.fullmatch(r"(\\d+)Day(\\d+)Hour(\\d+)Minute(\\d+)Second", value, re.I)
+                if duration:
+                    days, hours, minutes, seconds = map(int, duration.groups())
+                    device["uptime_raw"] = value
+                    device["uptime_seconds"] = days * 86400 + hours * 3600 + minutes * 60 + seconds
+                    readable = [f"{n} {unit}" for n, unit in
+                                ((days, "d"), (hours, "h"), (minutes, "min"), (seconds, "s")) if n]
+                    value = " ".join(readable) or "0 s"
+            device[key] = value
         header = table.find("tr")
         if header is None:
             continue
