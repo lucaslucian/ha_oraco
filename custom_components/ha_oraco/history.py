@@ -128,7 +128,7 @@ class HistoryDatabase:
             increments["__total__"]=(bytes_rx,bytes_tx)
         with self._connect() as db:
             db.executemany("INSERT OR REPLACE INTO traffic VALUES(?,?,?,?,?)",raw_rows)
-            db.executemany("""INSERT INTO traffic_5m VALUES(?,?,?,?,?,?,?,?)
+            db.executemany("""INSERT INTO traffic_5m (switch_id,bucket,port,rx_sum,tx_sum,count,peak_rx,peak_tx) VALUES(?,?,?,?,?,?,?,?)
                 ON CONFLICT(switch_id,bucket,port) DO UPDATE SET
                 rx_sum=rx_sum+excluded.rx_sum,tx_sum=tx_sum+excluded.tx_sum,
                 count=count+1,peak_rx=MAX(peak_rx,excluded.peak_rx),
