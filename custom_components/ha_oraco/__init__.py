@@ -116,10 +116,20 @@ class HoracoCoordinator(DataUpdateCoordinator[dict]):
                         self.cache["sfp" if name == "sfp" else "network"][name] = parsed
                         if name == "sfp":
                             self.diagnostics["sfp_fields"] = sorted(parsed)
-                        if self.history_db:
-                            await self.history_db.record_snapshot(name, parsed)
                         self.last[name] = now
-                        self.diagnostics["endpoints"][name] = {"status": "ok", "last_success": datetime.now(timezone.utc).isoformat()}
+                        self.diagnostics["endpoints"][name] = {
+                            "status": "ok",
+                            "last_success": datetime.now(timezone.utc).isoformat(),
+                        }
+                        if self.history_db:
+                            try:
+                                await self.history_db.record_snapshot(name, parsed)
+                            except Exception as history_err:
+                                self.diagnostics["endpoints"][name]["history_error"] = type(history_err).__name__
+                                _LOGGER.warning(
+                                    "HoraInfo %s snapshot failed on %s: %s",
+                                    name, self.client.host, history_err,
+                                )
                     except Exception as err:
                         _LOGGER.debug("%s unavailable on %s: %s", name, self.client.host, err)
                         self.diagnostics["endpoints"][name] = {"status": "unavailable", "error": type(err).__name__, "detail": str(err)[:180]}
