@@ -358,7 +358,7 @@ class HaOracoPanel extends HTMLElement {
         const labels={sfp:"SFP+",vlan_ports:"VLANs",isolation:"Isolamento",stp_ports:"STP por porta",storm_control:"Storm Control",stp_global:"STP global",aggregation:"Agregação"};
         body+='<section class="card"><h3>Histórico de mudanças detectadas</h3><p class="section-subtitle">Snapshots reais no banco, com retenção de 90 dias. Valores repetidos não criam novos eventos.</p>'
           +(changes.length?'<div class="event-list">'+changes.slice(0,20).map(ev=>'<div class="event-item"><span class="event-dot"></span><span>'+this.escape(labels[ev.kind]||ev.kind)+'</span><time>'+time(ev.timestamp)+'</time></div>').join("")+'</div>':'<p class="empty">Ainda não há snapshots registrados.</p>')+'</section>';
-        body+='<section class="card"><h3>Saúde das consultas</h3>'+Object.entries(sw.diagnostics?.endpoints||{}).map(([k,v])=>'<div class="kv"><span>'+this.escape(k)+'</span><b>'+this.escape(v.status)+'</b></div>').join("")+'</section>';
+        body+='<section class="card"><h3>Saúde das consultas</h3>'+Object.entries(sw.diagnostics?.endpoints||{}).map(([k,v])=>'<div class="kv"><span>'+this.escape(k)+'</span><b>'+this.escape(v.status)+(v.error?' · '+this.escape(v.error):'')+(v.detail?'<small class="endpoint-detail">'+this.escape(v.detail)+'</small>':'')+(v.history_error?'<small class="endpoint-detail">Histórico: '+this.escape(v.history_error)+'</small>':'')+'</b></div>').join("")+'</section>';
       }
       else if(this.tab === "vlan") {
         const vlans=sw.network?.vlan_ports?.ports||{};
@@ -410,6 +410,7 @@ class HaOracoPanel extends HTMLElement {
       .range.chosen{border-color:var(--primary-color);color:var(--primary-color);background:var(--secondary-background-color)}
       .history-action{border:1px solid var(--divider-color);border-radius:9px;padding:11px 13px;margin:16px 0;color:var(--primary-text-color)}
       .snapshot-list{margin:18px 0}.snapshot-list details{border:1px solid var(--divider-color);border-radius:8px;padding:12px;margin:7px 0}.snapshot-list summary{cursor:pointer}.snapshot-list pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px}
+      .endpoint-detail{display:block;font-weight:400;color:var(--secondary-text-color);max-width:650px;white-space:normal;overflow-wrap:anywhere;margin-top:4px}
       .module-state{display:flex;align-items:center;gap:10px;padding:12px;margin:12px 0;border-radius:10px;background:var(--secondary-background-color);font-size:12px}
       .module-light{width:8px;height:8px;border-radius:50%;background:var(--disabled-text-color)}
       .module-state.connected .module-light{background:#3bbb84}
