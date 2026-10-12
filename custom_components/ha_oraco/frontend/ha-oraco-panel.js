@@ -88,6 +88,42 @@ class HaOracoPanel extends HTMLElement {
       +'<div class="chart-legend"><span>● RX — azul</span><span>● TX — verde</span><span>'
       +samples.length+' amostras desta sessão</span></div>';
   }
+  topologyMap(sw) {
+    const ports=Object.values(sw.ports||{}).sort((a,b)=>Number(a.port)-Number(b.port));
+    if(!ports.length) return '<p class="empty">Sem interfaces identificadas.</p>';
+    const nodes=sw.topology?.nodes||[];
+    const edges=sw.topology?.edges||[];
+    const width=980, lane=90, top=90, footer=45;
+    const maxMac=15;
+    const rows=ports.map(p=>{
+      const ids=edges.filter(e=>e.from==="port:"+p.port && e.relation==="mac_learned").map(e=>e.to);
+      return {port:p,devices:ids.map(id=>nodes.find(n=>n.id===id)).filter(Boolean),hidden:Math.max(0,ids.length-maxMac)};
+    });
+    const height=top+rows.length*lane+footer;
+    const esc=v=>this.escape(v);
+    const switchBox='<rect x="12" y="15" width="255" height="52" rx="12" fill="#172d44" stroke="#3b99b4"/>'
+      +'<text x="29" y="45" fill="#eaf5ff" font-size="17" font-weight="600">Switch monitorado</text>';
+    const body=rows.map((r,i)=>{
+      const y=top+i*lane;
+      const active=!!r.port.up, color=active?"#3cbc87":"#7d8993";
+      const endpoint=380;
+      const links=r.devices.slice(0,maxMac);
+      const deviceText=links.length?links.map(n=>esc(n.label||n.mac)).join(" · "):"Nenhum MAC aprendido";
+      const summary=links.length>3?deviceText.slice(0,90)+"…":deviceText;
+      return '<path d="M140 67 V'+(y+19)+' H'+endpoint+'" fill="none" stroke="#47728c" stroke-width="1.7" opacity=".65"/>'
+        +'<rect x="300" y="'+y+'" width="165" height="44" rx="9" fill="#182b3b" stroke="'+color+'" stroke-width="1.2"/>'
+        +'<circle cx="317" cy="'+(y+22)+'" r="5" fill="'+color+'"/>'
+        +'<text x="332" y="'+(y+18)+'" fill="#eaf5ff" font-size="13">Porta '+esc(r.port.port)+'</text>'
+        +'<text x="332" y="'+(y+34)+'" fill="#9aafbf" font-size="10">'+esc(r.port.speed||"—")+'</text>'
+        +'<path d="M465 '+(y+22)+' H535" fill="none" stroke="'+color+'" stroke-width="1.7" opacity=".8"/>'
+        +'<rect x="535" y="'+y+'" width="410" height="44" rx="9" fill="#122739" stroke="#466175"/>'
+        +'<text x="550" y="'+(y+18)+'" fill="#eaf5ff" font-size="12">'+esc(links.length+(r.hidden||0))+' MACs observados</text>'
+        +'<text x="550" y="'+(y+34)+'" fill="#a3b4c1" font-size="10">'+esc(summary)+'</text>';
+    }).join("");
+    const diagram='<div class="topology-scroll"><svg class="topology-svg" viewBox="0 0 '+width+' '+height+'" role="img" aria-label="Topologia lógica do switch, portas e MACs">'
+      +switchBox+body+'</svg></div>';
+    return diagram+'<p class="topology-disclaimer">As conexões indicam MACs aprendidos em cada porta e não confirmam ligações físicas diretas. A exibição resume até 15 MACs por porta.</p>';
+  }
   escape(v) {
     return String(v ?? "—").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
   }
@@ -102,17 +138,19 @@ class HaOracoPanel extends HTMLElement {
       const online = ps.filter(p=>p.up).length;
       const rate = side => ps.reduce((sum,p)=>sum + (Number(p[side+"_bps"]) || 0),0);
       const fmt = n => n >= 1e9 ? (n/1e9).toFixed(2)+" Gb/s" : n>=1e6 ? (n/1e6).toFixed(1)+" Mb/s" : n>=1e3 ? (n/1e3).toFixed(1)+" kb/s" : n.toFixed(0)+" b/s";
-      const row = (p) => '<tr><td>Porta '+this.escape(p.port)+'</td><td><span class="dot '+(p.up?"ok":"")+'"></span>'+(p.up?"Ativa":"Inativa")+'</td><td>'+this.escape(p.speed)+'</td><td>'+fmt(Number(p.rx_bps)||0)+'</td><td>'+fmt(Number(p.tx_bps)||0)+'</td></tr>';
+      const peak=number=>sw.peaks?.ports?.[number]||{};
+      const row = (p) => '<tr><td>Porta '+this.escape(p.port)+'</td><td><span class="dot '+(p.up?"ok":"")+'"></span>'+(p.up?"Ativa":"Inativa")+'</td><td>'+this.escape(p.speed)+'</td><td>'+fmt(Number(p.rx_bps)||0)+'</td><td>'+fmt(Number(p.tx_bps)||0)+'</td><td>'+fmt(peak(p.port).rx_bps||0)+'</td><td>'+fmt(peak(p.port).tx_bps||0)+'</td></tr>';
       body += '<div class="heading"><h2>'+this.escape(sw.name)+'</h2><span>'+this.escape(sw.host)+'</span></div>';
       if (this.tab === "overview") {
         body += '<div class="stats"><section class="card metric"><small>Portas ativas</small><strong>'+online+' / '+ps.length+'</strong></section><section class="card metric"><small>Tráfego RX</small><strong>'+fmt(rate("rx"))+'</strong></section><section class="card metric"><small>Tráfego TX</small><strong>'+fmt(rate("tx"))+'</strong></section><section class="card metric"><small>Firmware</small><strong class="small">'+this.escape(sw.device?.firmware)+'</strong></section></div>';
+        body += '<div class="peak-strip"><span>Picos desde o início da integração</span><strong>RX '+fmt(sw.peaks?.total?.rx_bps||0)+'</strong><strong>TX '+fmt(sw.peaks?.total?.tx_bps||0)+'</strong></div>';
         body += '<section class="card"><h3>Tráfego ao vivo</h3>'+this.trafficChart(sw.id)+'</section>';
         body += '<section class="card"><h3>Visão das interfaces</h3><p class="section-subtitle">Estado das portas e velocidade negociada</p>'+this.portFace(ps)+'</section>';
         body += '<div class="columns"><section class="card"><h3>Portas e tráfego</h3>'+table(ps.slice(0,12))+'</section><section class="card"><h3>Diagnóstico SFP+</h3>'+this.renderSfp(sw,true)+'<h3 class="spaced">Inventário MAC</h3><p>'+this.escape(sw.mac?.mac_current ?? "—")+' MACs atuais · '+this.escape(sw.mac?.mac_known ?? "—")+' conhecidos</p></section></div>';
       } else if(this.tab === "ports") body += '<section class="card"><h3>Visão das interfaces</h3>'+this.portFace(ps)+'</section><section class="card"><h3>Portas e utilização</h3>'+table(ps)+'</section>';
       else if(this.tab === "sfp") body += '<section class="card"><h3>Transceptor óptico</h3><p class="section-subtitle">Medições e dados de identificação disponíveis no firmware</p>'+this.renderSfp(sw)+'</section>';
       else if(this.tab === "mac") body += '<section class="card"><h3>MACs observados · '+this.escape(sw.mac?.mac_current ?? "—")+'</h3><p>Mostrando até 25 MACs atuais; filtros aplicados localmente. Histórico preservado na integração.</p><input id="mac-filter" type="search" placeholder="Pesquisar MAC, porta, VLAN ou fabricante" value="'+this.escape(this.macFilter)+'" aria-label="Filtrar endereços MAC"><div class="scroll"><table><thead><tr><th>MAC</th><th>Porta</th><th>VLAN</th><th>Fabricante / classificação</th></tr></thead><tbody>'+(sw.mac?.mac_entries||[]).filter(e=>JSON.stringify(e).toLowerCase().includes(this.macFilter.toLowerCase())).map(e=>'<tr><td>'+this.escape(e.mac)+'</td><td>'+this.escape(e.port)+'</td><td>'+this.escape(e.vlan)+'</td><td>'+this.escape(e.vendor || e.classification)+'</td></tr>').join("")+'</tbody></table></div></section>';
-      else if(this.tab === "topology") body += '<section class="card"><h3>Mapa lógico por porta</h3><p>Relações baseadas na tabela MAC aprendida. Dispositivos atrás de APs ou switches não gerenciados podem aparecer conectados à mesma porta, sem confirmar ligação física direta.</p>'+ps.map(p=>'<div class="kv"><span>Porta '+this.escape(p.port)+'</span><b>'+this.escape((sw.topology?.edges||[]).filter(e=>e.from==="port:"+p.port).length)+' MAC(s) observado(s)</b></div>').join("")+'<div class="port-grid">'+(sw.topology?.nodes||[]).filter(n=>n.kind==="learned_mac").slice(0,100).map(n=>'<div class="port"><b>'+this.escape(n.label)+'</b><span>'+this.escape(n.vlan ? "VLAN "+n.vlan : "Sem VLAN")+'</span></div>').join("")+'</div></section>';
+      else if(this.tab === "topology") body += '<section class="card"><h3>Mapa lógico da rede</h3>'+this.topologyMap(sw)+'</section>';
       else if(this.tab === "system") body += '<section class="card"><h3>Informações do equipamento</h3>'+Object.entries(sw.device||{}).map(([k,v])=>'<div class="kv"><span>'+this.escape(k)+'</span><b>'+this.escape(v)+'</b></div>').join("")+'<h3>Saúde dos endpoints</h3>'+Object.entries(sw.diagnostics?.endpoints||{}).map(([k,v])=>'<div class="kv"><span>'+this.escape(k)+'</span><b>'+this.escape(v.status)+'</b></div>').join("")+'</section>';
       else if(this.tab === "vlan") {
         const vlans=sw.network?.vlan_ports?.ports||{};
@@ -126,7 +164,7 @@ class HaOracoPanel extends HTMLElement {
           +'<p class="footnote">* A interface do firmware identifica a coluna como Native VLAN. Não assumimos que represente todas as configurações de PVID ou isolamento.</p></section>';
       }
       else body += '<section class="card"><h3>'+this.escape(tabs.find(t=>t[0]===this.tab)?.[1])+'</h3><p>Esta área será preenchida automaticamente quando os dados forem disponibilizados pela integração e validados no firmware. Nenhum dado fictício é exibido.</p></section>';
-      function table(items) { return '<div class="scroll"><table><thead><tr><th>Interface</th><th>Link</th><th>Velocidade</th><th>RX</th><th>TX</th></tr></thead><tbody>'+items.map(row).join("")+'</tbody></table></div>'; }
+      function table(items) { return '<div class="scroll"><table><thead><tr><th>Interface</th><th>Link</th><th>Velocidade</th><th>RX</th><th>TX</th><th>Pico RX</th><th>Pico TX</th></tr></thead><tbody>'+items.map(row).join("")+'</tbody></table></div>'; }
     }
     this.shadowRoot.innerHTML = `<style>
       :host { display:block; min-height:100%; color:var(--primary-text-color); background:var(--primary-background-color); font-family:Roboto,"Arial",sans-serif; }
@@ -146,6 +184,8 @@ class HaOracoPanel extends HTMLElement {
       input[type=search]{width:100%;padding:12px 14px;border:1px solid var(--divider-color);border-radius:8px;background:var(--secondary-background-color);color:var(--primary-text-color);margin-bottom:12px} .kv{display:flex;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--divider-color);gap:15px}.kv span{color:var(--secondary-text-color)}
 
       .vlan-table td{vertical-align:middle}.vlan-pill{display:inline-block;padding:3px 7px;margin:2px;border-radius:6px;background:var(--secondary-background-color);border:1px solid var(--divider-color);font-size:11px}.mode-pill{display:inline-block;border-radius:7px;padding:5px 8px;background:var(--secondary-background-color);border:1px solid var(--divider-color);font-size:10px;font-weight:650}.mode-detail{display:block;margin-top:5px;color:var(--secondary-text-color)}.muted{color:var(--secondary-text-color)}
+      .peak-strip{display:flex;flex-wrap:wrap;gap:20px;align-items:center;padding:13px 18px;margin:-2px 0 15px;background:var(--card-background-color);border:1px solid var(--divider-color);border-radius:12px;font-size:12px}.peak-strip span{color:var(--secondary-text-color)}.peak-strip strong{font-size:13px}
+      .topology-scroll{overflow:auto;max-height:700px;border-radius:12px;background:#0b1a29;padding:10px}.topology-svg{display:block;width:100%;min-width:800px;height:auto;max-height:none}.topology-disclaimer{font-size:12px;color:var(--secondary-text-color)}
       .section-subtitle{font-size:12px;color:var(--secondary-text-color);margin:-8px 0 18px}
       .switch-face{background:var(--secondary-background-color);border:1px solid var(--divider-color);border-radius:12px;padding:19px}
       .face-title{display:flex;gap:10px;align-items:center;font-size:10px;letter-spacing:1px;color:var(--secondary-text-color);font-weight:600;margin-bottom:18px}
