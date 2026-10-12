@@ -76,8 +76,10 @@ class HaOracoPanel extends HTMLElement {
       +'<span>Representação lógica; disposição física depende do modelo</span></div></div>';
   }
   trafficChart(id) {
-    const samples=this.samples[id]||[];
-    if(samples.length<2)return '<p class="empty">Aguardando duas amostras para iniciar o gráfico.</p>';
+    const sw=(this.data?.switches||[]).find(x=>x.id===id);
+    const persisted=(sw?.traffic_history||[]).map(v=>({rx:Number(v.rx)||0,tx:Number(v.tx)||0}));
+    const samples=persisted.length?persisted:(this.samples[id]||[]);
+    if(samples.length<2)return '<p class="empty">Aguardando amostras de tráfego. O histórico será armazenado automaticamente.</p>';
     const peak=Math.max(1,...samples.flatMap(v=>[v.rx,v.tx]));
     const points=key=>samples.map((v,i)=>((i*740)/Math.max(1,samples.length-1)+30).toFixed(1)
       +','+(159-v[key]/peak*134).toFixed(1)).join(' ');
@@ -86,7 +88,7 @@ class HaOracoPanel extends HTMLElement {
       +grid+'<polyline points="'+points("rx")+'" fill="none" stroke="#29ade3" stroke-width="2.7" stroke-linejoin="round"/>'
       +'<polyline points="'+points("tx")+'" fill="none" stroke="#49bf87" stroke-width="2.7" stroke-linejoin="round"/></svg>'
       +'<div class="chart-legend"><span>● RX — azul</span><span>● TX — verde</span><span>'
-      +samples.length+' amostras desta sessão</span></div>';
+      +samples.length+' amostras '+(persisted.length?'registradas no banco':'desta sessão')+'</span></div>';
   }
   topologyMap(sw) {
     const ports=Object.values(sw.ports||{}).sort((a,b)=>Number(a.port)-Number(b.port));
@@ -149,7 +151,22 @@ class HaOracoPanel extends HTMLElement {
         body += '<div class="columns"><section class="card"><h3>Portas e tráfego</h3>'+table(ps.slice(0,12))+'</section><section class="card"><h3>Diagnóstico SFP+</h3>'+this.renderSfp(sw,true)+'<h3 class="spaced">Inventário MAC</h3><p>'+this.escape(sw.mac?.mac_current ?? "—")+' MACs atuais · '+this.escape(sw.mac?.mac_known ?? "—")+' conhecidos</p></section></div>';
       } else if(this.tab === "ports") body += '<section class="card"><h3>Visão das interfaces</h3>'+this.portFace(ps)+'</section><section class="card"><h3>Portas e utilização</h3>'+table(ps)+'</section>';
       else if(this.tab === "sfp") body += '<section class="card"><h3>Transceptor óptico</h3><p class="section-subtitle">Medições e dados de identificação disponíveis no firmware</p>'+this.renderSfp(sw)+'</section>';
-      else if(this.tab === "mac") body += '<section class="card"><h3>MACs observados · '+this.escape(sw.mac?.mac_current ?? "—")+'</h3><p>Mostrando até 25 MACs atuais; filtros aplicados localmente. Histórico preservado na integração.</p><input id="mac-filter" type="search" placeholder="Pesquisar MAC, porta, VLAN ou fabricante" value="'+this.escape(this.macFilter)+'" aria-label="Filtrar endereços MAC"><div class="scroll"><table><thead><tr><th>MAC</th><th>Porta</th><th>VLAN</th><th>Fabricante / classificação</th></tr></thead><tbody>'+(sw.mac?.mac_entries||[]).filter(e=>JSON.stringify(e).toLowerCase().includes(this.macFilter.toLowerCase())).map(e=>'<tr><td>'+this.escape(e.mac)+'</td><td>'+this.escape(e.port)+'</td><td>'+this.escape(e.vlan)+'</td><td>'+this.escape(e.vendor || e.classification)+'</td></tr>').join("")+'</tbody></table></div></section>';
+      else if(this.tab === "mac") {
+        const macData=sw.mac||{};
+        const macRows=macData.mac_history_entries||macData.mac_entries||[];
+        const matches=macRows.filter(e=>JSON.stringify(e).toLowerCase().includes(this.macFilter.toLowerCase()));
+        const stamp=v=>{if(!v)return '—';const d=new Date(v);return Number.isFinite(d.getTime())?d.toLocaleString('pt-BR'):this.escape(v);};
+        const count=sw.oui?.prefix_count||0;
+        body+='<section class="card"><h3>Inventário e histórico de dispositivos</h3>'
+          +'<div class="inventory-stats"><div><small>MACs presentes</small><strong>'+this.escape(macData.mac_current??0)+'</strong></div>'
+          +'<div><small>MACs conhecidos</small><strong>'+this.escape(macData.mac_known??0)+'</strong></div>'
+          +'<div><small>Base IEEE</small><strong>'+this.escape(count?count.toLocaleString('pt-BR')+' prefixos':'Não carregada')+'</strong></div></div>'
+          +'<p class="section-subtitle">Histórico persistente: primeira e última observação, porta, VLAN e fabricante. OUI atualizado: '+stamp(sw.oui?.last_updated)+'</p>'
+          +'<input id="mac-filter" type="search" placeholder="Pesquisar MAC, porta, VLAN ou fabricante" value="'+this.escape(this.macFilter)+'" aria-label="Pesquisar inventário">'
+          +'<div class="scroll"><table><thead><tr><th>MAC</th><th>Porta</th><th>VLAN</th><th>Fabricante / classificação</th><th>Primeira observação</th><th>Última observação</th></tr></thead><tbody>'
+          +matches.map(e=>'<tr><td>'+this.escape(e.mac)+'</td><td>'+this.escape(e.port)+'</td><td>'+this.escape(e.vlan)+'</td><td>'+this.escape(e.vendor||e.classification)+'</td><td>'+stamp(e.first_seen)+'</td><td>'+stamp(e.last_seen)+'</td></tr>').join('')
+          +'</tbody></table></div><p class="footnote">Exibindo até 200 registros recentes do histórico do switch. MACs administrados localmente não permitem atribuição confiável por OUI.</p></section>';
+      }
       else if(this.tab === "topology") body += '<section class="card"><h3>Mapa lógico da rede</h3>'+this.topologyMap(sw)+'</section>';
       else if(this.tab === "protection") {
         const net=sw.network||{};
@@ -217,6 +234,7 @@ class HaOracoPanel extends HTMLElement {
       input[type=search]{width:100%;padding:12px 14px;border:1px solid var(--divider-color);border-radius:8px;background:var(--secondary-background-color);color:var(--primary-text-color);margin-bottom:12px} .kv{display:flex;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--divider-color);gap:15px}.kv span{color:var(--secondary-text-color)}
 
       .vlan-table td{vertical-align:middle}.vlan-pill{display:inline-block;padding:3px 7px;margin:2px;border-radius:6px;background:var(--secondary-background-color);border:1px solid var(--divider-color);font-size:11px}.mode-pill{display:inline-block;border-radius:7px;padding:5px 8px;background:var(--secondary-background-color);border:1px solid var(--divider-color);font-size:10px;font-weight:650}.mode-detail{display:block;margin-top:5px;color:var(--secondary-text-color)}.muted{color:var(--secondary-text-color)}
+      .inventory-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:22px}.inventory-stats>div{background:var(--secondary-background-color);border-radius:12px;padding:17px}.inventory-stats small{display:block;color:var(--secondary-text-color);font-size:12px;margin-bottom:10px}.inventory-stats strong{display:block;font-size:20px;overflow-wrap:anywhere}
       .peak-strip{display:flex;flex-wrap:wrap;gap:20px;align-items:center;padding:13px 18px;margin:-2px 0 15px;background:var(--card-background-color);border:1px solid var(--divider-color);border-radius:12px;font-size:12px}.peak-strip span{color:var(--secondary-text-color)}.peak-strip strong{font-size:13px}
       .topology-scroll{overflow:auto;max-height:700px;border-radius:12px;background:#0b1a29;padding:10px}.topology-svg{display:block;width:100%;min-width:800px;height:auto;max-height:none}.topology-disclaimer{font-size:12px;color:var(--secondary-text-color)}
       .section-subtitle{font-size:12px;color:var(--secondary-text-color);margin:-8px 0 18px}
