@@ -133,11 +133,17 @@ class HistoryDatabase:
     def _inventory_summary(self):
         with self._connect() as db:
             total=db.execute("SELECT COUNT(*) FROM mac_inventory WHERE switch_id=?", (self.key,)).fetchone()[0]
+            matched=db.execute("""SELECT COUNT(*) FROM mac_inventory
+                WHERE switch_id=? AND classification='globally_administered'
+                AND vendor IS NOT NULL
+                AND vendor NOT IN ('', 'Desconhecido', 'MAC local/privado', 'Multicast')
+            """, (self.key,)).fetchone()[0]
             rows=db.execute("""SELECT mac,vlan,port,vendor,classification,first_seen,last_seen
                 FROM mac_inventory WHERE switch_id=?
                 ORDER BY last_seen DESC LIMIT 200""", (self.key,)).fetchall()
         return {
             "mac_known": total,
+            "mac_vendor_matched": matched,
             "mac_history_entries": [
                 dict(zip(("mac","vlan","port","vendor","classification","first_seen","last_seen"),r))
                 for r in rows
