@@ -34,8 +34,8 @@ class HoracoClient:
     async def _login(self):
         digest = hashlib.md5((self.username + self.password).encode()).hexdigest()
         data = {"username": self.username, "password": self.password, "Response": digest, "language": "EN"}
-        async with self.session.post(self.base + "/login.cgi", data=data, allow_redirects=False,
-                                     timeout=aiohttp.ClientTimeout(total=12)) as response:
+        async with self.session.post(self.base + "/login.cgi", data=data, headers={"Referer": self.base + "/login.html"}, allow_redirects=True,
+                                     timeout=aiohttp.ClientTimeout(total=20)) as response:
             if response.status != 200:
                 raise SwitchError(f"Login HTTP {response.status}")
             self.cookie = {"admin": digest}
@@ -50,8 +50,8 @@ class HoracoClient:
                 await self._login()
             await asyncio.sleep(0.4)
             for attempt in range(2):
-                async with self.session.get(self.base + path, cookies=self.cookie, allow_redirects=False,
-                                            timeout=aiohttp.ClientTimeout(total=12)) as response:
+                async with self.session.get(self.base + path, cookies=self.cookie, headers={"Referer": self.base + "/"}, allow_redirects=True,
+                                            timeout=aiohttp.ClientTimeout(total=20)) as response:
                     if response.status in (401, 403) and attempt == 0:
                         self.logged_in = False
                         await self._login()
@@ -78,7 +78,7 @@ class HoracoClient:
             async with self.session.post(
                 self.base + "/mac.cgi?page=fwd_tbl",
                 data={"cmd": "goto", "pageidx": str(page), "perpage": "3"},
-                cookies=self.cookie, allow_redirects=False,
+                cookies=self.cookie, headers={"Referer": self.base + "/mac.cgi?page=fwd_tbl"}, allow_redirects=True,
                 timeout=aiohttp.ClientTimeout(total=12),
             ) as response:
                 if response.status != 200:
