@@ -8,6 +8,7 @@ class HaOracoPanel extends HTMLElement {
     this.lastFetch = 0;
     this.busy = false;
     this.samples = {};
+    this.selectedPort = {};
   }
   set hass(value) {
     this._hass = value;
@@ -75,11 +76,11 @@ class HaOracoPanel extends HTMLElement {
       +'</div><div class="face-legend"><span>● Verde: conectada</span><span>● Cinza: desconectada</span>'
       +'<span>Representação lógica; disposição física depende do modelo</span></div></div>';
   }
-  trafficChart(id) {
+  trafficChart(id, port=null) {
     const sw=(this.data?.switches||[]).find(x=>x.id===id);
-    const persisted=(sw?.traffic_history||[]).map(v=>({rx:Number(v.rx)||0,tx:Number(v.tx)||0}));
-    const samples=persisted.length?persisted:(this.samples[id]||[]);
-    if(samples.length<2)return '<p class="empty">Aguardando amostras de tráfego. O histórico será armazenado automaticamente.</p>';
+    const persisted=(port ? (sw?.traffic_by_port?.[port]||[]) : (sw?.traffic_history||[])).map(v=>({rx:Number(v.rx)||0,tx:Number(v.tx)||0}));
+    const samples=persisted.length?persisted:(port?[]:(this.samples[id]||[]));
+    if(samples.length<2)return '<p class="empty">Aguardando amostras para formar o gráfico. As medições ficam salvas no banco.</p>';
     const peak=Math.max(1,...samples.flatMap(v=>[v.rx,v.tx]));
     const points=key=>samples.map((v,i)=>((i*740)/Math.max(1,samples.length-1)+30).toFixed(1)
       +','+(159-v[key]/peak*134).toFixed(1)).join(' ');
@@ -145,11 +146,20 @@ class HaOracoPanel extends HTMLElement {
       body += '<div class="heading"><h2>'+this.escape(sw.name)+'</h2><span>'+this.escape(sw.host)+'</span></div>';
       if (this.tab === "overview") {
         body += '<div class="stats"><section class="card metric"><small>Portas ativas</small><strong>'+online+' / '+ps.length+'</strong></section><section class="card metric"><small>Tráfego RX</small><strong>'+fmt(rate("rx"))+'</strong></section><section class="card metric"><small>Tráfego TX</small><strong>'+fmt(rate("tx"))+'</strong></section><section class="card metric"><small>Firmware</small><strong class="small">'+this.escape(sw.device?.firmware)+'</strong></section></div>';
-        body += '<div class="peak-strip"><span>Picos desde o início da integração</span><strong>RX '+fmt(sw.peaks?.total?.rx_bps||0)+'</strong><strong>TX '+fmt(sw.peaks?.total?.tx_bps||0)+'</strong></div>';
+        body += '<div class="peak-strip"><span>Picos registrados nos últimos 14 dias</span><strong>RX '+fmt(sw.peaks?.total?.rx_bps||0)+'</strong><strong>TX '+fmt(sw.peaks?.total?.tx_bps||0)+'</strong></div>';
         body += '<section class="card"><h3>Tráfego ao vivo</h3>'+this.trafficChart(sw.id)+'</section>';
         body += '<section class="card"><h3>Visão das interfaces</h3><p class="section-subtitle">Estado das portas e velocidade negociada</p>'+this.portFace(ps)+'</section>';
         body += '<div class="columns"><section class="card"><h3>Portas e tráfego</h3>'+table(ps.slice(0,12))+'</section><section class="card"><h3>Diagnóstico SFP+</h3>'+this.renderSfp(sw,true)+'<h3 class="spaced">Inventário MAC</h3><p>'+this.escape(sw.mac?.mac_current ?? "—")+' MACs atuais · '+this.escape(sw.mac?.mac_known ?? "—")+' conhecidos</p></section></div>';
-      } else if(this.tab === "ports") body += '<section class="card"><h3>Visão das interfaces</h3>'+this.portFace(ps)+'</section><section class="card"><h3>Portas e utilização</h3>'+table(ps)+'</section>';
+      } else if(this.tab === "ports") {
+        const portNumbers=ps.map(p=>String(p.port));
+        const selected=portNumbers.includes(this.selectedPort[sw.id])?this.selectedPort[sw.id]:portNumbers[0];
+        if(selected) this.selectedPort[sw.id]=selected;
+        body += '<section class="card"><h3>Visão das interfaces</h3>'+this.portFace(ps)+'</section>'
+          +'<section class="card"><h3>Histórico de tráfego por porta</h3><p class="section-subtitle">Medições gravadas em SQLite · selecione uma interface</p>'
+          +'<div class="port-selector">'+portNumbers.map(n=>'<button class="port-select '+(n===selected?'selected':'')+'" data-traffic-port="'+this.escape(n)+'" data-switch="'+this.escape(sw.id)+'">Porta '+this.escape(n)+'</button>').join('')+'</div>'
+          +this.trafficChart(sw.id,selected)+'</section>'
+          +'<section class="card"><h3>Portas e utilização</h3>'+table(ps)+'</section>';
+      }
       else if(this.tab === "sfp") body += '<section class="card"><h3>Transceptor óptico</h3><p class="section-subtitle">Medições e dados de identificação disponíveis no firmware</p>'+this.renderSfp(sw)+'</section>';
       else if(this.tab === "mac") {
         const macData=sw.mac||{};
@@ -234,6 +244,9 @@ class HaOracoPanel extends HTMLElement {
       input[type=search]{width:100%;padding:12px 14px;border:1px solid var(--divider-color);border-radius:8px;background:var(--secondary-background-color);color:var(--primary-text-color);margin-bottom:12px} .kv{display:flex;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--divider-color);gap:15px}.kv span{color:var(--secondary-text-color)}
 
       .vlan-table td{vertical-align:middle}.vlan-pill{display:inline-block;padding:3px 7px;margin:2px;border-radius:6px;background:var(--secondary-background-color);border:1px solid var(--divider-color);font-size:11px}.mode-pill{display:inline-block;border-radius:7px;padding:5px 8px;background:var(--secondary-background-color);border:1px solid var(--divider-color);font-size:10px;font-weight:650}.mode-detail{display:block;margin-top:5px;color:var(--secondary-text-color)}.muted{color:var(--secondary-text-color)}
+      .port-selector{display:flex;gap:7px;flex-wrap:wrap;margin:16px 0 20px}
+      .port-select{padding:8px 13px;border:1px solid var(--divider-color);border-radius:9px;background:var(--secondary-background-color);font-size:12px;color:var(--primary-text-color)}
+      .port-select.selected{border-color:var(--primary-color);background:color-mix(in srgb,var(--primary-color) 13%,var(--card-background-color));color:var(--primary-color)}
       .inventory-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:22px}.inventory-stats>div{background:var(--secondary-background-color);border-radius:12px;padding:17px}.inventory-stats small{display:block;color:var(--secondary-text-color);font-size:12px;margin-bottom:10px}.inventory-stats strong{display:block;font-size:20px;overflow-wrap:anywhere}
       .peak-strip{display:flex;flex-wrap:wrap;gap:20px;align-items:center;padding:13px 18px;margin:-2px 0 15px;background:var(--card-background-color);border:1px solid var(--divider-color);border-radius:12px;font-size:12px}.peak-strip span{color:var(--secondary-text-color)}.peak-strip strong{font-size:13px}
       .topology-scroll{overflow:auto;max-height:700px;border-radius:12px;background:#0b1a29;padding:10px}.topology-svg{display:block;width:100%;min-width:800px;height:auto;max-height:none}.topology-disclaimer{font-size:12px;color:var(--secondary-text-color)}
@@ -261,6 +274,10 @@ class HaOracoPanel extends HTMLElement {
     <nav>${tabs.map(([id,label])=>'<button data-tab="'+id+'" class="'+(id===this.tab?"selected":"")+'">'+label+'</button>').join("")}</nav>
     ${body}</main>`;
     this.shadowRoot.querySelectorAll("[data-tab]").forEach(el => el.addEventListener("click", () => {this.tab=el.dataset.tab;this.render()}));
+    this.shadowRoot.querySelectorAll("[data-traffic-port]").forEach(btn=>btn.addEventListener("click",()=>{
+      this.selectedPort[btn.dataset.switch]=btn.dataset.trafficPort;
+      this.render();
+    }));
     this.shadowRoot.getElementById("refresh")?.addEventListener("click",()=>this.refresh());
     this.shadowRoot.getElementById("mac-filter")?.addEventListener("change",ev=>{this.macFilter=ev.target.value;this.render()});
   }
