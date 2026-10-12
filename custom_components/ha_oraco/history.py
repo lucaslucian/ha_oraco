@@ -147,7 +147,6 @@ class HistoryDatabase:
                     increments[number]=(drx,dtx)
                     bytes_rx += drx
                     bytes_tx += dtx
-                self.previous_counters[number] = counters
                 baselines.append((self.key,number,counters[0],counters[1],timestamp))
         if not raw_rows:
             return
@@ -181,6 +180,9 @@ class HistoryDatabase:
             db.execute("DELETE FROM traffic WHERE timestamp < ?",((stamp-timedelta(days=2)).isoformat(),))
             db.execute("DELETE FROM traffic_5m WHERE bucket < ?",((stamp-timedelta(days=30)).isoformat(),))
             db.execute("DELETE FROM daily_traffic WHERE day < ?",((stamp.astimezone(self.tz)-timedelta(days=30)).date().isoformat(),))
+        # Move the in-memory baseline only after the transaction commits.
+        for _switch, number, rx, tx, _time in baselines:
+            self.previous_counters[number] = (rx, tx)
 
     async def record_traffic(self, ports):
         await self.hass.async_add_executor_job(self._record_traffic, ports)
