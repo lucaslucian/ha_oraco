@@ -116,3 +116,20 @@ class HistoryDatabase:
 
     async def record_inventory(self, records):
         await self.hass.async_add_executor_job(self._record_inventory, records)
+
+    def _inventory_summary(self):
+        with self._connect() as db:
+            total=db.execute("SELECT COUNT(*) FROM mac_inventory WHERE switch_id=?", (self.key,)).fetchone()[0]
+            rows=db.execute("""SELECT mac,vlan,port,vendor,classification,first_seen,last_seen
+                FROM mac_inventory WHERE switch_id=?
+                ORDER BY last_seen DESC LIMIT 200""", (self.key,)).fetchall()
+        return {
+            "mac_known": total,
+            "mac_history_entries": [
+                dict(zip(("mac","vlan","port","vendor","classification","first_seen","last_seen"),r))
+                for r in rows
+            ],
+        }
+
+    async def inventory_summary(self):
+        return await self.hass.async_add_executor_job(self._inventory_summary)
