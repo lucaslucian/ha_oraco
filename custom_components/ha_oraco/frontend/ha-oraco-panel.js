@@ -193,7 +193,7 @@ class HaOracoPanel extends HTMLElement {
       body += '<div class="heading"><h2>'+this.escape(sw.name)+'</h2><span>'+this.escape(sw.host)+'</span></div>';
       if (this.tab === "overview") {
         body += '<div class="stats"><section class="card metric"><small>Portas ativas</small><strong>'+online+' / '+ps.length+'</strong></section><section class="card metric"><small>Tráfego RX</small><strong>'+fmt(rate("rx"))+'</strong></section><section class="card metric"><small>Tráfego TX</small><strong>'+fmt(rate("tx"))+'</strong></section><section class="card metric"><small>Firmware</small><strong class="small">'+this.escape(sw.device?.firmware)+'</strong></section></div>';
-        body += '<div class="peak-strip"><span>Picos registrados nos últimos 14 dias</span><strong>↓ RX '+fmt(sw.peaks?.total?.rx_bps||0)+'</strong><strong>↑ TX '+fmt(sw.peaks?.total?.tx_bps||0)+'</strong><span class="overview-macs">'+this.escape(sw.mac?.mac_known??0)+' MACs conhecidos</span></div>';
+        body += '<div class="peak-strip"><span>Picos registrados nos últimos 30 dias</span><strong>↓ RX '+fmt(sw.peaks?.total?.rx_bps||0)+'</strong><strong>↑ TX '+fmt(sw.peaks?.total?.tx_bps||0)+'</strong><span class="overview-macs">'+this.escape(sw.mac?.mac_known??0)+' MACs conhecidos</span></div>';
         body += '<section class="card"><h3>Histórico de tráfego</h3>'+this.ranges(sw.id)+this.trafficChart(sw.id)+this.dailyTable(sw.id)+'</section>';
         body += '<section class="card"><h3>Visão das interfaces</h3><p class="section-subtitle">Estado das portas e velocidade negociada</p>'+this.portFace(ps)+'</section>';
         body += '<div class="columns"><section class="card"><h3>Portas e tráfego</h3>'+table(ps.slice(0,12))+'</section><section class="card"><h3>Diagnóstico SFP+</h3>'+this.renderSfp(sw,true)+'<h3 class="spaced">Inventário MAC</h3><p>'+this.escape(sw.mac?.mac_current ?? "—")+' MACs atuais · '+this.escape(sw.mac?.mac_known ?? "—")+' conhecidos</p></section></div>';
@@ -242,12 +242,12 @@ class HaOracoPanel extends HTMLElement {
             root_forward_delay:"Forward Delay da raiz"};
           body+='<section class="card"><h3>STP / RSTP global</h3><p class="section-subtitle">Estado atual: '+(global.enabled?'Ativado':'Desativado')+'</p><div class="detail-grid">'
             +Object.entries(global).filter(([k])=>k!=="enabled").map(([k,v])=>'<div class="detail-item"><small>'+this.escape(labels[k]||k)+'</small><strong>'+this.escape(v)+'</strong></div>').join('')
-            +'</div></section>';
+            +'</div>'+this.snapshots(sw.id,'stp_global','STP global')+'</section>';
         }
         const aggregate=net.aggregation;
         if(aggregate) {
           body+='<section class="card"><h3>Agregação de portas</h3><p class="section-subtitle">'+this.escape(aggregate.count)+' grupo(s) identificado(s)</p>'
-            +(aggregate.groups?.length?tbl(['Grupo','Tipo','Membros','Porta agregada'],aggregate.groups.map(g=>'<tr><td>'+this.escape(g.group)+'</td><td>'+this.escape(g.type)+'</td><td>'+this.escape(g.members)+'</td><td>'+this.escape(g.aggregated_port)+'</td></tr>')):'<p class="empty">Nenhum grupo de agregação configurado.</p>')+'</section>';
+            +(aggregate.groups?.length?tbl(['Grupo','Tipo','Membros','Porta agregada'],aggregate.groups.map(g=>'<tr><td>'+this.escape(g.group)+'</td><td>'+this.escape(g.type)+'</td><td>'+this.escape(g.members)+'</td><td>'+this.escape(g.aggregated_port)+'</td></tr>')):'<p class="empty">Nenhum grupo de agregação configurado.</p>')+this.snapshots(sw.id,'aggregation','Agregação')+'</section>';
         }
         body+='<section class="card"><h3>Isolamento de portas</h3><p class="section-subtitle">Listas apresentadas pelo firmware; o sentido das restrições ainda requer validação.</p>'+status(iso)
           +(iso.length?tbl(['Porta','Lista informada','Portas listadas'],iso.map(p=>'<tr><td>Porta '+this.escape(p.port)+'</td><td>'+this.escape(p.raw_list)+'</td><td>'+this.escape(p.listed_ports?.join(', '))+'</td></tr>')):'') +this.snapshots(sw.id,'isolation','Isolamento')+'</section>';
