@@ -43,3 +43,15 @@ def test_snooping():
     a = load("advanced")
     assert a.parse_dhcp('<input name="enable_dhcpsnp" checked>')["enabled"] is True
     assert a.parse_igmp('<input name="enable_igmp">')["enabled"] is False
+
+def test_optical_no_fiber_floor_value():
+    a = load("advanced")
+    html = """<table class="infotbl"><tr><td>RX Power</td><td id="rxpower">0-1</td></tr><tr><td>TX Power</td><td id="txpower">0-1</td></tr></table>"""
+    value = a.parse_sfp(html)
+    assert value["rx_dbm"] == -40.0
+    assert value["tx_dbm"] == -40.0
+
+def test_optical_raw_zero_is_unknown():
+    a = load("advanced")
+    html = """<table class="infotbl"><tr><td>RX Power</td><td id="rxpower">0-0</td></tr></table>"""
+    assert a.parse_sfp(html)["rx_dbm"] is None
