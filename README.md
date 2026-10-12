@@ -16,7 +16,7 @@
 
 Integração experimental **somente leitura** para monitorar switches Horaco e OEM com interface CGI Realtek no Home Assistant. A integração usa HACS e registra um painel na barra lateral, sem Docker ou Lovelace customizado.
 
-## Estado do desenvolvimento (0.4.13 — experimental)
+## Estado do desenvolvimento (0.4.14 — experimental)
 
 | Função | Implementação | Requer validação no switch |
 |---|---|---|
@@ -113,3 +113,8 @@ Inspirado em [switch-dashboard](https://github.com/byte4geek/switch-dashboard) e
 ### Diagnóstico de dados ausentes
 
 Se a página SFP+ não responder, o HoraInfo informa **diagnóstico indisponível**, e não módulo fisicamente ausente. A aba Sistema mostra o erro do endpoint SFP+, permitindo diferenciar problemas de parser, autenticação e rede. O painel é versionado para evitar o uso de JavaScript anterior no cache do navegador.
+
+
+### Identidade visual e ícones
+
+A integração fornece `brand/icon.png`, `brand/icon@2x.png`, `brand/logo.png` e `brand/logo@2x.png`, inclusive variações para tema escuro. São gerados a partir dos SVGs em `assets/` e utilizados localmente pelo Home Assistant 2026.3 ou posterior. O HACS pode continuar exibindo o placeholder **Icon not available** na lista de downloads ou na entidade de atualização devido à implementação atual de sua interface, que pode consultar o CDN antigo em vez dos ícones locais. Isso não indica ausência dos arquivos no HoraInfo. Após instalar uma nova versão pelo HACS, reinicie o Home Assistant para atualizar os recursos de marca.
