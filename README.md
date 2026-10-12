@@ -16,7 +16,7 @@
 
 Integração experimental **somente leitura** para monitorar switches Horaco e OEM com interface CGI Realtek no Home Assistant. A integração usa HACS e registra um painel na barra lateral, sem Docker ou Lovelace customizado.
 
-## Estado do desenvolvimento (0.4.1 — experimental)
+## Estado do desenvolvimento (0.4.4 — experimental)
 
 | Função | Implementação | Requer validação no switch |
 |---|---|---|
@@ -29,7 +29,8 @@ Integração experimental **somente leitura** para monitorar switches Horaco e O
 | SFP DDMI (RX, TX, temperatura e tensão) | Sim, parser do firmware de referência | Sim |
 | IGMP e DHCP Snooping | Sim | Sim |
 | Jumbo Frames | Sim | Sim |
-| VLAN/PVID/Port Isolation completos | Não | Precisa identificar endpoints |
+| VLAN por porta (Access/Trunk/Hybrid, Native, tagged/untagged) | Sim, leitura somente GET | Sim, depende do firmware | 
+| PVID e Port Isolation completos | Não | Exigem endpoints adicionais |
 | Alertas sofisticados e limites ópticos | Não | Exigem limiares do módulo |
 | Mapa visual arrastável / LLDP | Não | LLDP depende de suporte real |
 | Configuração do switch | Não | Não está prevista nesta fase |
@@ -58,6 +59,7 @@ A instalação manual não recebe as atualizações automáticas do HACS.
 - Transceptores: 60 segundos.
 - Tabela MAC: 120 segundos.
 - DHCP/IGMP: 300 segundos.
+- VLAN por porta: 600 segundos, somente consulta da tabela de estado.
 - Jumbo frames: 3600 segundos.
 - Informações gerais publicadas: 3600 segundos. Como `/info.cgi` também fornece os estados das portas, ele é consultado a cada ciclo rápido.
 - IEEE OUI: arquivo em cache persistente e verificação de atualização após 30 dias, no início da integração.
