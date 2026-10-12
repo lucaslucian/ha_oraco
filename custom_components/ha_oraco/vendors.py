@@ -65,6 +65,8 @@ class VendorCache:
             if any(x['status'] != 'ok' for x in self.source_status.values()):
                 found = {**self.prefixes, **found}
             self.prefixes = found
-            self.last_updated = datetime.now(timezone.utc).isoformat()
+            complete = len(self.source_status) == len(SOURCES) and all(x["status"] == "ok" for x in self.source_status.values())
+            if complete:
+                self.last_updated = datetime.now(timezone.utc).isoformat()
             await self.store.async_save({"prefixes": found, "last_updated": self.last_updated})
         return len(found)
