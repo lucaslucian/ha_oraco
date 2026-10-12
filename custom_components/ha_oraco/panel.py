@@ -31,6 +31,7 @@ async def dashboard_data(hass, connection, msg):
             "diagnostics": data.get("diagnostics", {}),
             "peaks": data.get("peaks", {}),
             "traffic_history": data.get("traffic_history", []),
+            "traffic_by_port": data.get("traffic_by_port", {}),
             "oui": {"prefix_count": len(coordinator.vendors.prefixes) if coordinator.vendors else 0,
                     "last_updated": coordinator.vendors.last_updated if coordinator.vendors else None,
                     "last_attempt": coordinator.vendors.last_attempt if coordinator.vendors else None,
