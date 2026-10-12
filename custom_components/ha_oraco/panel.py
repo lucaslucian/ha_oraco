@@ -57,12 +57,16 @@ async def history_data(hass, connection, msg):
         return
     database=coordinator.history_db
     if msg["mode"]=="traffic":
-        result=await database.series(msg["port"],msg["hours"])
+        result={"series":await database.series(msg["port"],msg["hours"]),
+                "total":await database.period_totals(msg["port"],msg["hours"])}
     elif msg["mode"]=="daily":
         result=await database.daily_totals(msg["port"])
     else:
         result=await database.snapshot_history(msg["kind"])
-    connection.send_result(msg["id"],{"items":result})
+    if msg["mode"]=="traffic":
+        connection.send_result(msg["id"],{"items":result["series"],"total":result["total"]})
+    else:
+        connection.send_result(msg["id"],{"items":result})
 
 async def register_panel(hass):
     """Serve frontend file and register one native-looking custom sidebar panel."""
