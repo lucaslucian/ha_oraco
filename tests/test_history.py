@@ -52,3 +52,30 @@ def test_sqlite_persists_traffic_and_inventory():
 
     with TemporaryDirectory() as root:
         asyncio.run(scenario(root))
+
+def test_reclassification_and_deduplicated_snapshots():
+    class Vendors:
+        def lookup(self, mac):
+            return "Example Manufacturer" if mac == "00:11:22:33:44:55" else "Desconhecido"
+
+    async def scenario(root):
+        db=load().HistoryDatabase(FakeHass(root),"other_switch")
+        await db.initialize()
+        await db.record_inventory([{
+            "mac":"00:11:22:33:44:55", "vlan":"1", "port":"3",
+            "first_seen":"2026-01-01T00:00:00+00:00",
+            "last_seen":"2026-01-02T00:00:00+00:00",
+            "vendor":"Desconhecido","classification":"globally_administered",
+        }])
+        updated=await db.reclassify_inventory(Vendors())
+        assert updated==1
+        inventory=await db.inventory_summary()
+        assert inventory["mac_history_entries"][0]["vendor"]=="Example Manufacturer"
+        assert inventory["mac_history_entries"][0]["first_seen"]=="2026-01-01T00:00:00+00:00"
+        await db.record_snapshot("sfp",{"temperature_c":32.5})
+        await db.record_snapshot("sfp",{"temperature_c":32.5})
+        await db.record_snapshot("sfp",{"temperature_c":33.0})
+        assert len(await db.recent_changes())==2
+
+    with TemporaryDirectory() as root:
+        asyncio.run(scenario(root))
