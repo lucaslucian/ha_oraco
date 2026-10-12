@@ -179,6 +179,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     coordinator.vendors = vendors
     if vendors.prefixes:
         await coordinator.inventory.reclassify(vendors)
+        if coordinator.history_db:
+            await coordinator.history_db.reclassify_inventory(vendors)
         coordinator.cache["mac"] = coordinator.inventory.summary()
     if coordinator.history_db:
         try:
@@ -211,6 +213,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                             await item.inventory.reclassify(vendors)
                             item.cache["mac"] = item.inventory.summary()
                             if item.history_db:
+                                await item.history_db.reclassify_inventory(vendors)
                                 await item.history_db.record_inventory(item.inventory.history.values())
                                 item.cache["mac"].update(await item.history_db.inventory_summary())
                             item.async_set_updated_data(dict(item.cache))
