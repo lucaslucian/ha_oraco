@@ -158,3 +158,18 @@ class HistoryDatabase:
 
     async def record_snapshot(self, kind, payload):
         await self.hass.async_add_executor_job(self._record_snapshot,kind,payload)
+
+    def _reclassify_inventory(self, lookup):
+        with self._connect() as db:
+            rows=db.execute("SELECT vlan,mac,vendor FROM mac_inventory WHERE switch_id=?", (self.key,)).fetchall()
+            updates=[]
+            for vlan,mac,previous in rows:
+                resolved=lookup(mac)
+                if resolved not in ("", "Desconhecido", None) and resolved!=previous:
+                    updates.append((resolved,self.key,vlan,mac))
+            if updates:
+                db.executemany("UPDATE mac_inventory SET vendor=? WHERE switch_id=? AND vlan=? AND mac=?", updates)
+            return len(updates)
+
+    async def reclassify_inventory(self, vendors):
+        return await self.hass.async_add_executor_job(self._reclassify_inventory, vendors.lookup)
