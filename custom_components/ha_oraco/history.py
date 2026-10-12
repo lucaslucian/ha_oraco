@@ -243,3 +243,67 @@ class HistoryDatabase:
 
     async def recent_changes(self):
         return await self.hass.async_add_executor_job(self._recent_changes)
+
+    def _series(self, port, hours):
+        if port != "__total__" and (not port.isdecimal() or len(port)>4):
+            return []
+        hours = max(1,min(720,int(hours)))
+        cutoff = (datetime.now(timezone.utc)-timedelta(hours=hours)).isoformat()
+        with self._connect() as db:
+            rows = db.execute("""SELECT bucket,rx_sum,tx_sum,count,peak_rx,peak_tx
+                FROM traffic_5m WHERE switch_id=? AND port=? AND bucket>=?
+                ORDER BY bucket""",(self.key,port,cutoff)).fetchall()
+            if hours <= 24:
+                # Raw samples are retained for two days, giving finer 1/6/12h detail.
+                raw = db.execute("""SELECT timestamp,rx_bps,tx_bps FROM traffic
+                    WHERE switch_id=? AND port=? AND timestamp>=? ORDER BY timestamp""",
+                    (self.key,port,cutoff)).fetchall()
+            else:
+                raw = []
+        if raw:
+            step = max(1, (len(raw)+599)//600)
+            return [{"timestamp":raw[i][0], "rx":sum(v[1] for v in raw[i:i+step])/len(raw[i:i+step]),
+                     "tx":sum(v[2] for v in raw[i:i+step])/len(raw[i:i+step])}
+                    for i in range(0,len(raw),step)]
+        step=max(1,(len(rows)+599)//600)
+        result=[]
+        for index in range(0,len(rows),step):
+            group=rows[index:index+step]
+            count=sum(r[3] for r in group)
+            if count:
+                result.append({"timestamp":group[-1][0],
+                    "rx":sum(r[1] for r in group)/count,
+                    "tx":sum(r[2] for r in group)/count,
+                    "peak_rx":max(r[4] for r in group),
+                    "peak_tx":max(r[5] for r in group)})
+        return result
+
+    async def series(self, port, hours):
+        return await self.hass.async_add_executor_job(self._series, str(port), int(hours))
+
+    def _daily_totals(self, port, days):
+        if port!="__total__" and (not port.isdecimal() or len(port)>4):
+            return []
+        cutoff=(datetime.now(self.tz)-timedelta(days=max(1,min(730,int(days))))).date().isoformat()
+        with self._connect() as db:
+            rows=db.execute("""SELECT day,rx_bytes,tx_bytes FROM daily_traffic
+                WHERE switch_id=? AND port=? AND day>=? ORDER BY day DESC""",
+                (self.key,port,cutoff)).fetchall()
+        return [{"day":day,"rx_bytes":rx,"tx_bytes":tx} for day,rx,tx in rows]
+
+    async def daily_totals(self, port="__total__", days=365):
+        return await self.hass.async_add_executor_job(self._daily_totals,str(port),int(days))
+
+    def _snapshot_history(self,kind):
+        valid=("sfp","vlan_ports","isolation","stp_ports","storm_control","stp_global","aggregation")
+        if kind not in valid:
+            return []
+        cutoff=(datetime.now(timezone.utc)-timedelta(days=90)).isoformat()
+        with self._connect() as db:
+            rows=db.execute("""SELECT timestamp,payload FROM snapshots
+                WHERE switch_id=? AND kind=? AND timestamp>=?
+                ORDER BY timestamp DESC LIMIT 120""",(self.key,kind,cutoff)).fetchall()
+        return [{"timestamp":timestamp,"data":json.loads(payload)} for timestamp,payload in rows]
+
+    async def snapshot_history(self,kind):
+        return await self.hass.async_add_executor_job(self._snapshot_history,kind)
