@@ -16,7 +16,7 @@
 
 Integração experimental **somente leitura** para monitorar switches Horaco e OEM com interface CGI Realtek no Home Assistant. A integração usa HACS e registra um painel na barra lateral, sem Docker ou Lovelace customizado.
 
-## Estado do desenvolvimento (0.4.8 — experimental)
+## Estado do desenvolvimento (0.4.9 — experimental)
 
 | Função | Implementação | Requer validação no switch |
 |---|---|---|
@@ -71,7 +71,7 @@ A instalação manual não recebe as atualizações automáticas do HACS.
 
 A integração descobre automaticamente as interfaces e os recursos disponíveis em cada equipamento compatível.
 
-Os picos de tráfego RX/TX são calculados para o switch inteiro e por interface a partir das taxas observadas e armazenadas no SQLite. O histórico de amostras é mantido por 14 dias e os picos representam esse período. O gráfico usa o banco, inclusive após recarregar a página ou reiniciar a integração. Observações anteriores à instalação desta versão não podem ser recuperadas retroativamente. O inventário mantém em SQLite o fabricante atribuído, VLAN, porta, classificação e datas da primeira e da última observação de cada MAC. A atualização da base IEEE revalida os fabricantes históricos e atuais. Mudanças em SFP, VLAN, STP, isolamento, Storm Control e agregação são registradas como snapshots por até 90 dias; amostras inalteradas não são duplicadas. O armazenamento anterior do inventário MAC em Home Assistant Store é usado para migração, sem apagar dados históricos.
+Os picos de tráfego RX/TX são calculados para o switch inteiro e por interface a partir das taxas observadas e armazenadas no SQLite. O histórico de amostras é mantido por 14 dias e os picos representam esse período. A visão geral exibe a série recente do switch, e a aba Portas permite selecionar uma interface para consultar seu histórico gráfico. O gráfico usa o banco, inclusive após recarregar a página ou reiniciar a integração. Observações anteriores à instalação desta versão não podem ser recuperadas retroativamente. O inventário mantém em SQLite o fabricante atribuído, VLAN, porta, classificação e datas da primeira e da última observação de cada MAC. A atualização da base IEEE revalida os fabricantes históricos e atuais, inclusive registros antigos retidos no SQLite. Os três arquivos IEEE são verificados separadamente; falhas preservam os prefixos já conhecidos e uma nova tentativa é agendada diariamente quando a atualização estiver pendente. A aba Sistema mostra a quantidade de prefixos, a data da última atualização e o status de cada origem. Mudanças em SFP, VLAN, STP, isolamento, Storm Control e agregação são registradas como snapshots por até 90 dias; amostras inalteradas não são duplicadas. Para evitar crescimento excessivo, os snapshots SFP são limitados a um registro a cada cinco minutos. A aba Sistema apresenta os eventos recentes detectados. O armazenamento anterior do inventário MAC em Home Assistant Store é usado para migração, sem apagar dados históricos.
 
 O mapa da rede exibe conexões lógicas MAC–porta (sem afirmar que os dispositivos estão diretamente ligados ao switch).
 
