@@ -16,7 +16,7 @@
 
 Integração experimental **somente leitura** para monitorar switches Horaco e OEM com interface CGI Realtek no Home Assistant. A integração usa HACS e registra um painel na barra lateral, sem Docker ou Lovelace customizado.
 
-## Estado do desenvolvimento (0.4.9 — experimental)
+## Estado do desenvolvimento (0.4.10 — experimental)
 
 | Função | Implementação | Requer validação no switch |
 |---|---|---|
@@ -38,7 +38,7 @@ Integração experimental **somente leitura** para monitorar switches Horaco e O
 | Mapa visual arrastável / LLDP | Não | LLDP depende de suporte real |
 | Configuração do switch | Não | Não está prevista nesta fase |
 
-O painel expõe visão geral, portas, SFP+, dispositivos, VLANs (estado pendente), mapa lógico e sistema. O grafo MAC demonstra **aprendizado na porta**, não a conexão física direta. Não representa hosts atrás de NAT individualmente.
+O painel expõe visão geral, portas, SFP+, dispositivos, VLANs, proteções, mapa lógico e sistema. O grafo MAC demonstra **aprendizado na porta**, não a conexão física direta. Não representa hosts atrás de NAT individualmente.
 
 ## Instalação
 
@@ -64,21 +64,21 @@ A instalação manual não recebe as atualizações automáticas do HACS.
 - DHCP/IGMP: 300 segundos.
 - VLAN por porta: 600 segundos, somente consulta da tabela de estado.
 - Isolamento, STP por porta e Storm Control: 600 segundos, somente GET.
-- Versão do firmware: leitura GET de `/fwug.cgi` a cada 6 horas, sem comandos de atualização.
+- Firmware, modelo, MAC e uptime: extraídos de `/info.cgi` (a mesma consulta de estado das portas). O endpoint `/fwug.cgi` não é consultado.
 - Jumbo frames: 3600 segundos.
 - Informações gerais publicadas: 3600 segundos. Como `/info.cgi` também fornece os estados das portas, ele é consultado a cada ciclo rápido.
 - IEEE OUI: arquivo em cache persistente e verificação de atualização após 30 dias, no início da integração.
 
 A integração descobre automaticamente as interfaces e os recursos disponíveis em cada equipamento compatível.
 
-Os picos de tráfego RX/TX são calculados para o switch inteiro e por interface a partir das taxas observadas e armazenadas no SQLite. O histórico de amostras é mantido por 14 dias e os picos representam esse período. A visão geral exibe a série recente do switch, e a aba Portas permite selecionar uma interface para consultar seu histórico gráfico. O gráfico usa o banco, inclusive após recarregar a página ou reiniciar a integração. Observações anteriores à instalação desta versão não podem ser recuperadas retroativamente. O inventário mantém em SQLite o fabricante atribuído, VLAN, porta, classificação e datas da primeira e da última observação de cada MAC. A atualização da base IEEE revalida os fabricantes históricos e atuais, inclusive registros antigos retidos no SQLite. Os três arquivos IEEE são verificados separadamente; falhas preservam os prefixos já conhecidos e uma nova tentativa é agendada diariamente quando a atualização estiver pendente. A aba Sistema mostra a quantidade de prefixos, a data da última atualização e o status de cada origem. Mudanças em SFP, VLAN, STP, isolamento, Storm Control e agregação são registradas como snapshots por até 90 dias; amostras inalteradas não são duplicadas. Para evitar crescimento excessivo, os snapshots SFP são limitados a um registro a cada cinco minutos. A aba Sistema apresenta os eventos recentes detectados. O armazenamento anterior do inventário MAC em Home Assistant Store é usado para migração, sem apagar dados históricos.
+Os picos de tráfego RX/TX são calculados para o switch inteiro e por interface a partir das taxas observadas e armazenadas no SQLite. As amostras detalhadas são mantidas por 48 horas; médias e picos agregados a cada cinco minutos por até 30 dias. O usuário pode escolher períodos de 1, 6 ou 12 horas, 1, 3, 5, 7, 15 ou 30 dias. O volume acumulado de RX/TX é contabilizado por diferença positiva dos contadores de bytes reais, com resumos diários por porta e para o switch, preservados sem expiração automática (até 365 dias são apresentados por consulta). Reinícios da integração ou reset de contadores não geram volumes artificiais, embora possam deixar uma pequena lacuna. Os picos representam os últimos 30 dias. A visão geral exibe a série recente do switch, e a aba Portas permite selecionar uma interface para consultar seu histórico gráfico. O gráfico usa o banco, inclusive após recarregar a página ou reiniciar a integração. Observações anteriores à instalação desta versão não podem ser recuperadas retroativamente. O inventário mantém em SQLite o fabricante atribuído, VLAN, porta, classificação e datas da primeira e da última observação de cada MAC. A atualização da base IEEE revalida os fabricantes históricos e atuais, inclusive registros antigos retidos no SQLite. Os três arquivos IEEE são verificados separadamente; falhas preservam os prefixos já conhecidos e uma nova tentativa é agendada diariamente quando a atualização estiver pendente. A aba Sistema mostra a quantidade de prefixos, a data da última atualização e o status de cada origem. Mudanças em SFP, VLAN, STP, isolamento, Storm Control e agregação são registradas como snapshots por até 90 dias; amostras inalteradas não são duplicadas. Para evitar crescimento excessivo, os snapshots SFP são limitados a um registro a cada cinco minutos. A aba Sistema apresenta os eventos recentes detectados. Cada aba compatível tem um botão de consulta dos snapshots completos armazenados durante os últimos 90 dias. O armazenamento anterior do inventário MAC em Home Assistant Store é usado para migração, sem apagar dados históricos.
 
 O mapa da rede exibe conexões lógicas MAC–porta (sem afirmar que os dispositivos estão diretamente ligados ao switch).
 
 ## Privacidade e segurança
 
 - Nenhum endpoint de alteração de VLAN, reset, atualização, reboot ou controle administrativo.
-- A página `/fwug.cgi` é consultada exclusivamente com GET para obter a versão. O comando `enter_loader`, que inicia a atualização do firmware, **nunca é enviado**.
+- A página `/fwug.cgi` não é mais consultada. A versão é lida de `/info.cgi`, sem acesso ao endpoint de atualização do firmware.
 - O cliente usa GET nas rotas de monitoramento aprovadas. POST ocorre somente em login e paginação de leitura da tabela MAC.
 - Painel e WebSocket restritos a administradores.
 - O inventário MAC (cache Store limitado a 2.000 identidades por switch e histórico ampliado no SQLite) é armazenado localmente no Home Assistant; não é enviado à IEEE. O download de registros IEEE é separado das consultas MAC. O arquivo SQLite é criado em `.storage/ha_oraco_history.db` e deve ser incluído nos backups para preservar o histórico.
