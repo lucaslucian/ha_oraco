@@ -79,3 +79,28 @@ def test_reclassification_and_deduplicated_snapshots():
 
     with TemporaryDirectory() as root:
         asyncio.run(scenario(root))
+
+def test_30_day_buckets_daily_traffic_and_history_filters():
+    async def scenario(root):
+        db=load().HistoryDatabase(FakeHass(root),"bucket_switch")
+        await db.initialize()
+        # Initial counters establish the baseline; they are not counted as traffic.
+        await db.record_traffic({"2":{"rx_bps":1500,"tx_bps":900,
+                                     "rx_bytes":10000,"tx_bytes":30000}})
+        await db.record_traffic({"2":{"rx_bps":2500,"tx_bps":1200,
+                                     "rx_bytes":12000,"tx_bytes":35000}})
+        totals=await db.daily_totals("2")
+        assert sum(r["rx_bytes"] for r in totals)==2000
+        assert sum(r["tx_bytes"] for r in totals)==5000
+        whole=await db.daily_totals("__total__")
+        assert whole[0]["rx_bytes"]==2000
+        assert whole[0]["tx_bytes"]==5000
+        series=await db.series("2",720)
+        assert series
+        assert max(r["rx"] for r in series)>=1500
+        assert (await db.traffic_summary())["peaks"]["ports"]["2"]["rx_bps"]==2500
+        await db.record_snapshot("vlan_ports",{"ports":{"2":{"mode":"trunk"}}})
+        snapshots=await db.snapshot_history("vlan_ports")
+        assert snapshots and snapshots[0]["data"]["ports"]["2"]["mode"]=="trunk"
+    with TemporaryDirectory() as root:
+        asyncio.run(scenario(root))
