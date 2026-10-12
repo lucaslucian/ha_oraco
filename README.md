@@ -16,7 +16,7 @@
 
 Integração experimental **somente leitura** para monitorar switches Horaco e OEM com interface CGI Realtek no Home Assistant. A integração usa HACS e registra um painel na barra lateral, sem Docker ou Lovelace customizado.
 
-## Estado do desenvolvimento (0.4.7 — experimental)
+## Estado do desenvolvimento (0.4.8 — experimental)
 
 | Função | Implementação | Requer validação no switch |
 |---|---|---|
@@ -71,7 +71,9 @@ A instalação manual não recebe as atualizações automáticas do HACS.
 
 A integração descobre automaticamente as interfaces e os recursos disponíveis em cada equipamento compatível.
 
-Os picos de tráfego RX/TX são calculados para o switch inteiro e por interface a partir das taxas observadas. O período começa quando a integração é inicializada e os picos são reiniciados quando ela reinicia; não são máximos históricos permanentes. O mapa da rede exibe conexões lógicas MAC–porta (sem afirmar que os dispositivos estão diretamente ligados ao switch).
+Os picos de tráfego RX/TX são calculados para o switch inteiro e por interface a partir das taxas observadas e armazenadas no SQLite. O histórico de amostras é mantido por 14 dias e os picos representam esse período. O gráfico usa o banco, inclusive após recarregar a página ou reiniciar a integração. Observações anteriores à instalação desta versão não podem ser recuperadas retroativamente. O inventário mantém em SQLite o fabricante atribuído, VLAN, porta, classificação e datas da primeira e da última observação de cada MAC. A atualização da base IEEE revalida os fabricantes históricos e atuais. Mudanças em SFP, VLAN, STP, isolamento, Storm Control e agregação são registradas como snapshots por até 90 dias; amostras inalteradas não são duplicadas. O armazenamento anterior do inventário MAC em Home Assistant Store é usado para migração, sem apagar dados históricos.
+
+O mapa da rede exibe conexões lógicas MAC–porta (sem afirmar que os dispositivos estão diretamente ligados ao switch).
 
 ## Privacidade e segurança
 
@@ -79,7 +81,7 @@ Os picos de tráfego RX/TX são calculados para o switch inteiro e por interface
 - A página `/fwug.cgi` é consultada exclusivamente com GET para obter a versão. O comando `enter_loader`, que inicia a atualização do firmware, **nunca é enviado**.
 - O cliente usa GET nas rotas de monitoramento aprovadas. POST ocorre somente em login e paginação de leitura da tabela MAC.
 - Painel e WebSocket restritos a administradores.
-- O inventário MAC (até 2.000 identidades por switch) é armazenado localmente; não é enviado à IEEE. O download de registros IEEE é separado das consultas MAC.
+- O inventário MAC (cache Store limitado a 2.000 identidades por switch e histórico ampliado no SQLite) é armazenado localmente no Home Assistant; não é enviado à IEEE. O download de registros IEEE é separado das consultas MAC. O arquivo SQLite é criado em `.storage/ha_oraco_history.db` e deve ser incluído nos backups para preservar o histórico.
 - MAC com bit local é rotulado **MAC local/privado**, não necessariamente aleatorizado.
 - O diagnóstico exportável omite credenciais e endereços MAC. O equipamento pode usar HTTP sem TLS; utilize somente em rede confiável.
 - A recuperação da sessão depende do firmware. Não exponha a interface de administração do switch à internet.
