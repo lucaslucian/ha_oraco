@@ -16,7 +16,7 @@
 
 Integração experimental **somente leitura** para monitorar switches Horaco e OEM com interface CGI Realtek no Home Assistant. A integração usa HACS e registra um painel na barra lateral, sem Docker ou Lovelace customizado.
 
-## Estado do desenvolvimento (0.4.16 — experimental)
+## Estado do desenvolvimento (0.4.17 — experimental)
 
 | Função | Implementação | Requer validação no switch |
 |---|---|---|
@@ -123,3 +123,5 @@ A integração fornece `brand/icon.png`, `brand/icon@2x.png`, `brand/logo.png` e
 ### Integridade do histórico (0.4.16)
 
 A migração de amostras antigas para intervalos de cinco minutos é executada uma única vez por arquivo SQLite, sem reimportar linhas em cada reinício. Os últimos contadores de bytes são preservados de forma temporária entre reinícios rápidos da integração (até três minutos) para evitar lacunas desnecessárias. Se o equipamento ficar indisponível por mais tempo ou reiniciar os próprios contadores, um novo ponto de referência é estabelecido sem inventar consumo durante a ausência. As atualizações do histórico MAC preservam as datas já conhecidas quando novas observações não as apresentam. Falhas na escrita do histórico ou reclassificação de fabricantes são isoladas do fluxo de monitoramento, e o diagnóstico indica o problema em vez de reportar falsamente a consulta como indisponível.
+
+A partir da 0.4.17, a paginação da tabela MAC também renova uma sessão HTTP expirada uma única vez, e a falha ao salvar o cache legado não é interpretada como falha de coleta. Em caso de indisponibilidade do banco, o HoraInfo mantém o monitoramento e registra o erro para diagnóstico.
