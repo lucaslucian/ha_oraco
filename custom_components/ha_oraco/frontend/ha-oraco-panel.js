@@ -124,19 +124,21 @@ class HaOracoPanel extends HTMLElement {
     const hours=this.chartHours[id+"|"+(port||"__total__")]||24;
     const key=id+"|traffic|"+(port||"__total__")+"|"+hours+"|sfp";
     const query=this.historyViews[key];
-    const persisted=(query?.items||(port ? (sw?.traffic_by_port?.[port]||[]) : (sw?.traffic_history||[]))).map(v=>({rx:Number(v.rx)||0,tx:Number(v.tx)||0}));
+    const persisted=(query?.items||(port ? (sw?.traffic_by_port?.[port]||[]) : (sw?.traffic_history||[]))).map(v=>({rx:Number(v.rx)||0,tx:Number(v.tx)||0,timestamp:v.timestamp}));
     const samples=persisted.length?persisted:(port?[]:(this.samples[id]||[]));
     if(samples.length<2)return '<p class="empty">Aguardando duas amostras. Os dados são armazenados continuamente.</p>';
     const peak=Math.max(1,...samples.flatMap(v=>[v.rx,v.tx]));
+    const rate=n=>n>=1e9?(n/1e9).toFixed(2)+" Gb/s":n>=1e6?(n/1e6).toFixed(1)+" Mb/s":n>=1e3?(n/1e3).toFixed(1)+" kb/s":n.toFixed(0)+" b/s";
+    const stamp=entry=>{const date=new Date(entry?.timestamp);return Number.isFinite(date.getTime())?date.toLocaleString("pt-BR"):"—";};
     const points=key=>samples.map((v,i)=>((i*740)/Math.max(1,samples.length-1)+30).toFixed(1)
       +','+(159-v[key]/peak*134).toFixed(1)).join(' ');
     const area=key=>"30,159 "+points(key)+" 770,159";
     const grid=[26,70,115,159].map(y=>'<line x1="30" x2="770" y1="'+y+'" y2="'+y+'" stroke="currentColor" opacity=".12" stroke-dasharray="4 5"/>').join("");
     return '<svg class="traffic-chart" viewBox="0 0 800 185" role="img" aria-label="Tráfego RX e TX">'
-      +grid+'<polygon points="'+area("rx")+'" fill="#29ade3" opacity=".08"/><polygon points="'+area("tx")+'" fill="#49bf87" opacity=".07"/><polyline points="'+points("rx")+'" fill="none" stroke="#29ade3" stroke-width="2.7" stroke-linejoin="round"/>'
+      +grid+'<text x="28" y="17" fill="currentColor" opacity=".7" font-size="12">'+rate(peak)+'</text><polygon points="'+area("rx")+'" fill="#29ade3" opacity=".08"/><polygon points="'+area("tx")+'" fill="#49bf87" opacity=".07"/><polyline points="'+points("rx")+'" fill="none" stroke="#29ade3" stroke-width="2.7" stroke-linejoin="round"/>'
       +'<polyline points="'+points("tx")+'" fill="none" stroke="#49bf87" stroke-width="2.7" stroke-linejoin="round"/></svg>'
       +'<div class="chart-legend"><span>● RX — azul</span><span>● TX — verde</span><span>'
-      +samples.length+' amostras '+(persisted.length?'registradas no banco':'desta sessão')+'</span></div>';
+      +samples.length+' amostras '+(persisted.length?'registradas no banco':'desta sessão')+'</span><span>'+stamp(samples[0])+' — '+stamp(samples[samples.length-1])+'</span></div>';
   }
   topologyMap(sw) {
     const ports=Object.values(sw.ports||{}).sort((a,b)=>Number(a.port)-Number(b.port));
