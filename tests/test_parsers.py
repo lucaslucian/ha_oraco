@@ -80,3 +80,14 @@ def test_actual_sfp_page_labels_and_optics():
     assert data["serial_number"]=="XPON26080833"
     assert data["current_ma"]==0
     assert data["rx_dbm"]==-40
+
+def test_sfp_unexpected_html_has_safe_structural_diagnostics():
+    a = load("advanced")
+    html = '<html><head><title>Session expired</title></head><body><table><tr><td>Please log in</td><td>Again</td></tr></table></body></html>'
+    try:
+        a.parse_sfp(html)
+    except ValueError as exc:
+        assert "Session expired" in str(exc)
+        assert "rows=1" in str(exc)
+    else:
+        raise AssertionError("Unexpected SFP HTML should not be interpreted as disconnected module")
