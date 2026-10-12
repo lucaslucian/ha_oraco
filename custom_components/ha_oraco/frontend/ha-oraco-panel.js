@@ -70,7 +70,12 @@ class HaOracoPanel extends HTMLElement {
       .filter(([k])=>!readings.includes(k)&&!["temp","voltage","current","rxpower","txpower"].includes(k))
       .map(([k,v])=>'<div class="detail-item"><small>'+this.escape(this.sfpLabel(k))
       +'</small><strong>'+this.escape(v)+'</strong></div>').join("");
-    return '<div class="optical-grid">'+fields+'</div>'+(extra?'<h4>Identificação do transceptor</h4><div class="detail-grid">'+extra+'</div>':"");
+    const present=String(raw.module_present||"").trim().toLowerCase();
+    const presence=present==="yes"||present==="true"?
+      '<div class="module-state connected"><span class="module-light"></span>Módulo SFP+ detectado'+(raw.port?' · '+this.escape(raw.port):'')+'</div>':
+      present==="no"||present==="false"?
+      '<div class="module-state"><span class="module-light"></span>Nenhum módulo óptico informado</div>':"";
+    return presence+'<div class="optical-grid">'+fields+'</div>'+(extra?'<h4>Identificação do transceptor</h4><div class="detail-grid">'+extra+'</div>':"");
   }
   portFace(ports) {
     if(!ports.length)return '<p class="empty">Nenhuma interface identificada.</p>';
@@ -388,6 +393,9 @@ class HaOracoPanel extends HTMLElement {
       .range.chosen{border-color:var(--primary-color);color:var(--primary-color);background:var(--secondary-background-color)}
       .history-action{border:1px solid var(--divider-color);border-radius:9px;padding:11px 13px;margin:16px 0;color:var(--primary-text-color)}
       .snapshot-list{margin:18px 0}.snapshot-list details{border:1px solid var(--divider-color);border-radius:8px;padding:12px;margin:7px 0}.snapshot-list summary{cursor:pointer}.snapshot-list pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px}
+      .module-state{display:flex;align-items:center;gap:10px;padding:12px;margin:12px 0;border-radius:10px;background:var(--secondary-background-color);font-size:12px}
+      .module-light{width:8px;height:8px;border-radius:50%;background:var(--disabled-text-color)}
+      .module-state.connected .module-light{background:#3bbb84}
       .help-tip{display:inline-grid;place-items:center;width:18px;height:18px;font-size:11px;font-weight:700;border:1px solid var(--secondary-text-color);border-radius:50%;color:var(--secondary-text-color);cursor:help;vertical-align:middle}
       .snapshot-day,.snapshot-revision{padding:11px 13px;border:1px solid var(--divider-color);border-radius:9px;margin:8px 0;background:var(--secondary-background-color)}
       .snapshot-revision{margin:11px 0;background:var(--card-background-color)}.snapshot-day summary,.snapshot-revision summary{cursor:pointer;font-weight:550}
