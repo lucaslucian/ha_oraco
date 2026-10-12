@@ -433,7 +433,8 @@ class HistoryDatabase:
                 by_day.setdefault(day,[]).append({"timestamp":timestamp,"data":json.loads(payload)})
             except (ValueError,TypeError):
                 continue
-        return [{"day":day,"checked_at":last,"checks":checks,"changes":changes,
+        return [{"day":day,"checked_at":last,"checks":checks,
+                 "changes":max(changes or 0,len(by_day.get(day,[]))),
                  "events":by_day.get(day,[])} for day,last,checks,changes in days]
 
     async def snapshot_history(self,kind):
