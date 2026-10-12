@@ -123,7 +123,7 @@ def parse_info(html: str) -> tuple[dict, dict]:
         # Retain the original tag boundaries; HTML parsers repair broken th/td nesting.
         table_html = html
         for match in re.finditer(
-            r"<th\\b[^>]*>(.*?)</(?:th|td)\\s*>\\s*<td\\b[^>]*>(.*?)</td\\s*>",
+            r"<th\b[^>]*>(.*?)</(?:th|td)\s*>\s*<td\b[^>]*>(.*?)</td\s*>",
             table_html, re.I | re.S,
         ):
             label = BeautifulSoup(match.group(1), "html.parser").get_text(" ", strip=True).lower().rstrip(":")
