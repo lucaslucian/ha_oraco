@@ -11,6 +11,7 @@ import hashlib
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
+from .traffic_guard import counter_delta, valid_counter
 
 
 class HistoryDatabase:
@@ -20,6 +21,7 @@ class HistoryDatabase:
         self.key = key
         self.tz = ZoneInfo(getattr(hass.config, 'time_zone', None) or 'UTC')
         self.previous_counters = {}
+        self.previous_stamps = {}
 
     def _connect(self):
         con = sqlite3.connect(self.path, timeout=15)
@@ -110,6 +112,7 @@ class HistoryDatabase:
             try:
                 if datetime.fromisoformat(recorded)>=cutoff:
                     result[port]=(rx,tx)
+                    self.previous_stamps[port]=datetime.fromisoformat(recorded)
             except (ValueError,TypeError):
                 continue
         return result
@@ -139,24 +142,33 @@ class HistoryDatabase:
             buckets.append((self.key,bucket,number,rx,tx,1,rx,tx))
             counters = (port.get("rx_bytes"), port.get("tx_bytes"))
             previous = self.previous_counters.get(number)
-            if all(isinstance(x,int) and not isinstance(x,bool) and x>=0 for x in counters):
-                if previous and all(new >= old for new,old in zip(counters,previous)):
-                    drx = counters[0]-previous[0]
-                    dtx = counters[1]-previous[1]
+            previous_stamp = self.previous_stamps.get(number)
+            if all(valid_counter(value) for value in counters):
+                deltas = []
+                for index in range(2):
+                    old = previous[index] if previous else None
+                    elapsed = (stamp - previous_stamp).total_seconds() if previous_stamp else None
+                    delta, _reason = counter_delta(old, counters[index], elapsed, port.get("speed"))
+                    deltas.append(delta)
+                # Account directions independently: a TX reset must not erase valid RX.
+                drx, dtx = (value if value is not None else 0 for value in deltas)
+                if any(value is not None for value in deltas):
                     daily.append((self.key,day,number,drx,dtx))
                     increments[number]=(drx,dtx)
                     bytes_rx += drx
                     bytes_tx += dtx
                 baselines.append((self.key,number,counters[0],counters[1],timestamp))
-        if not raw_rows:
+        if not raw_rows and not baselines:
             return
-        raw_rows.append((self.key,timestamp,"__total__",rx_total,tx_total))
-        buckets.append((self.key,bucket,"__total__",rx_total,tx_total,1,rx_total,tx_total))
+        if raw_rows:
+            raw_rows.append((self.key,timestamp,"__total__",rx_total,tx_total))
+            buckets.append((self.key,bucket,"__total__",rx_total,tx_total,1,rx_total,tx_total))
         if daily:
             daily.append((self.key,day,"__total__",bytes_rx,bytes_tx))
             increments["__total__"]=(bytes_rx,bytes_tx)
         with self._connect() as db:
-            db.executemany("INSERT OR REPLACE INTO traffic (switch_id,timestamp,port,rx_bps,tx_bps) VALUES(?,?,?,?,?)",raw_rows)
+            if raw_rows:
+                db.executemany("INSERT OR REPLACE INTO traffic (switch_id,timestamp,port,rx_bps,tx_bps) VALUES(?,?,?,?,?)",raw_rows)
             db.executemany("""INSERT INTO traffic_5m (switch_id,bucket,port,rx_sum,tx_sum,count,peak_rx,peak_tx) VALUES(?,?,?,?,?,?,?,?)
                 ON CONFLICT(switch_id,bucket,port) DO UPDATE SET
                 rx_sum=rx_sum+excluded.rx_sum,tx_sum=tx_sum+excluded.tx_sum,
@@ -181,8 +193,9 @@ class HistoryDatabase:
             db.execute("DELETE FROM traffic_5m WHERE bucket < ?",((stamp-timedelta(days=30)).isoformat(),))
             db.execute("DELETE FROM daily_traffic WHERE day < ?",((stamp.astimezone(self.tz)-timedelta(days=30)).date().isoformat(),))
         # Move the in-memory baseline only after the transaction commits.
-        for _switch, number, rx, tx, _time in baselines:
+        for _switch, number, rx, tx, recorded in baselines:
             self.previous_counters[number] = (rx, tx)
+            self.previous_stamps[number] = datetime.fromisoformat(recorded)
 
     async def record_traffic(self, ports):
         await self.hass.async_add_executor_job(self._record_traffic, ports)
