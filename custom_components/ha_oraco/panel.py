@@ -29,6 +29,7 @@ async def dashboard_data(hass, connection, msg):
             "topology": data.get("topology", {}),
             "network": data.get("network", {}),
             "diagnostics": data.get("diagnostics", {}),
+            "peaks": data.get("peaks", {}),
         })
     connection.send_result(msg["id"], {"switches": switches})
 
