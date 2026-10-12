@@ -104,3 +104,18 @@ def test_30_day_buckets_daily_traffic_and_history_filters():
         assert snapshots and snapshots[0]["data"]["ports"]["2"]["mode"]=="trunk"
     with TemporaryDirectory() as root:
         asyncio.run(scenario(root))
+
+def test_existing_raw_samples_upgrade_to_five_minute_buckets():
+    async def scenario(root):
+        db=load().HistoryDatabase(FakeHass(root),"migrating")
+        await db.initialize()
+        await db.record_traffic({"1":{"rx_bps":6000,"tx_bps":8000}})
+        from sqlite3 import connect
+        with connect(db.path) as conn:
+            conn.execute("DELETE FROM traffic_5m")
+        new_db=load().HistoryDatabase(FakeHass(root),"migrating")
+        await new_db.initialize()
+        history=await new_db.series("1",720)
+        assert history and history[-1]["rx"]==6000
+    with TemporaryDirectory() as root:
+        asyncio.run(scenario(root))
