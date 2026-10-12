@@ -173,8 +173,30 @@ class HoracoCoordinator(DataUpdateCoordinator[dict]):
                     self.cache["recent_changes"] = await self.history_db.recent_changes()
                 except Exception as err:
                     _LOGGER.debug("HoraInfo recent changes unavailable: %s", type(err).__name__)
-            self.cache["topology"] = build_topology(self.client.host, self.cache["ports"],
-                                                      self.inventory.current if self.inventory else [])
+            # Enrich current FDB nodes from the persistent inventory. OUI
+            # reclassification may happen later than the last MAC poll, so
+            # current observations alone often lack a useful manufacturer.
+            topology_entries = []
+            if self.inventory:
+                historic = self.cache.get("mac", {}).get("mac_history_entries", [])
+                by_identity = {
+                    (str(row.get("vlan")), row.get("mac", "").upper()): row
+                    for row in historic if row.get("mac")
+                }
+                for row in self.inventory.current:
+                    enriched = dict(row)
+                    previous = by_identity.get((str(row.get("vlan")), row.get("mac", "").upper()), {})
+                    for field in ("name", "vendor"):
+                        if not enriched.get(field) or enriched[field] == "Desconhecido":
+                            value = previous.get(field)
+                            if value and value != "Desconhecido":
+                                enriched[field] = value
+                    if self.vendors and (not enriched.get("vendor") or enriched["vendor"] == "Desconhecido"):
+                        enriched["vendor"] = self.vendors.lookup(row["mac"])
+                    topology_entries.append(enriched)
+            self.cache["topology"] = build_topology(
+                self.client.host, self.cache["ports"], topology_entries
+            )
             self.cache["diagnostics"] = dict(self.diagnostics)
             return self.cache
         except UpdateFailed as err:
