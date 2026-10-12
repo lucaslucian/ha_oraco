@@ -1,5 +1,8 @@
 """Persistent MAC inventory; history is bounded to 2000 identities."""
 from datetime import datetime, timezone
+import logging
+
+_LOGGER = logging.getLogger(__name__)
 from homeassistant.helpers.storage import Store
 
 class MacInventory:
@@ -32,7 +35,12 @@ class MacInventory:
         recent = sorted(self.history.items(), key=lambda pair: pair[1]["last_seen"], reverse=True)
         self.history = dict(recent[:2000])
         self.last_scan = timestamp
-        await self.store.async_save({"history": self.history})
+        try:
+            await self.store.async_save({"history": self.history})
+            return True
+        except Exception as err:
+            _LOGGER.warning("HoraInfo legacy MAC cache save failed: %s", type(err).__name__)
+            return False
 
     async def reclassify(self, vendors):
         """Revalidate both current and historical identities after IEEE refresh."""
