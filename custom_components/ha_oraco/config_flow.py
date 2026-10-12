@@ -1,11 +1,18 @@
 """Config flow and polling interval options."""
 from __future__ import annotations
+import logging
+import aiohttp
+import asyncio
 import voluptuous as vol
+from .api import SwitchError
 from homeassistant import config_entries
 from homeassistant.const import CONF_HOST, CONF_PORT, CONF_USERNAME, CONF_PASSWORD
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from .api import HoracoClient, parse_info
 from .const import DOMAIN, DEFAULT_PORT, DEFAULT_USER
+
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class OracoConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -21,8 +28,18 @@ class OracoConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 _, ports = parse_info(await client.get("/info.cgi"))
                 if not ports:
                     raise ValueError("No compatible port table")
-            except Exception:
+            except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as err:
+                _LOGGER.warning("HoraInfo connection failed: %s", type(err).__name__)
                 errors["base"] = "cannot_connect"
+            except SwitchError as err:
+                _LOGGER.warning("HoraInfo CGI session failed: %s", err)
+                errors["base"] = "cannot_connect"
+            except ValueError as err:
+                _LOGGER.warning("HoraInfo switch replied with incompatible data: %s", err)
+                errors["base"] = "unknown"
+            except Exception:
+                _LOGGER.exception("HoraInfo setup failed unexpectedly")
+                errors["base"] = "unknown"
             else:
                 await self.async_set_unique_id(f"{user_input[CONF_HOST]}:{user_input[CONF_PORT]}")
                 self._abort_if_unique_id_configured()
