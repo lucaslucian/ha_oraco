@@ -117,7 +117,7 @@ class HaOracoPanel extends HTMLElement {
       (totals?this.prettyBytes(totals.rx_bytes):"Aguardando consulta")+'</strong></div>'+
       '<div><small>Enviado no período selecionado</small><strong>'+
       (totals?this.prettyBytes(totals.tx_bytes):"Aguardando consulta")+'</strong></div></div>';
-    if(!result)return box+'<button class="history-action" data-daily-switch="'+this.escape(switchId)+'" data-daily-port="'+this.escape(port)+'">Carregar gráfico de volume por dia (30 dias)</button>';
+    if(!result)return box+'<p class="muted">Preparando gráfico de volume diário...</p>';
     if(result.loading)return box+'<p class="muted">Consultando totais diários…</p>';
     if(result.error)return box+'<p class="muted">'+this.escape(result.error)+'</p>';
     const records=result.items.slice(0,30).reverse(),largest=Math.max(1,...records.flatMap(r=>[r.rx_bytes,r.tx_bytes]));
@@ -425,6 +425,7 @@ class HaOracoPanel extends HTMLElement {
       this.selectedPort[btn.dataset.switch]=btn.dataset.trafficPort;
       const id=btn.dataset.switch,port=btn.dataset.trafficPort;
       this.fetchHistory(id,"traffic",port,this.chartHours[id+"|"+port]||24);
+      if(!this.historyViews[id+"|daily|"+port+"|24|sfp"])this.fetchHistory(id,"daily",port);
     }));
     this.shadowRoot.querySelectorAll("[data-chart-hours]").forEach(btn=>btn.addEventListener("click",()=>{
       const id=btn.dataset.switch,port=btn.dataset.port,hours=Number(btn.dataset.chartHours);
