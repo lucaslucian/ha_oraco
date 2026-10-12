@@ -55,3 +55,28 @@ def test_optical_raw_zero_is_unknown():
     a = load("advanced")
     html = """<table class="infotbl"><tr><td>RX Power</td><td id="rxpower">0-0</td></tr></table>"""
     assert a.parse_sfp(html)["rx_dbm"] is None
+
+def test_actual_sfp_page_labels_and_optics():
+    a=load("advanced")
+    html="""<table class="infotbl">
+    <tr><th>Port:</th><td>Port 9</td></tr>
+    <tr><th>OE Present:</th><td>Yes</td></tr>
+    <tr><th>Loss of Signal:</th><td>No</td></tr>
+    <tr><th>Transceiver Type:</th><td>SFP/SFP+</td></tr>
+    <tr><th>Connector Type:</th><td>SC</td></tr>
+    <tr><th>Transmission Media:</th><td>Single Mode</td></tr>
+    <tr><th>Vendor Name:</th><td>ODI</td></tr>
+    <tr><th>Vendor PN:</th><td>DFP-34X-2IY3</td></tr>
+    <tr><th>Vendor SN:</th><td>XPON26080833</td></tr>
+    <tr><th>Temperature(C):</th><td id=temp>66-107</td></tr>
+    <tr><th>Voltage(V):</th><td id=voltage>121-66</td></tr>
+    <tr><th>Current(mA):</th><td id=current>0-0</td></tr>
+    <tr><th>Input Power(dBm):</th><td id=rxpower>0-1</td></tr>
+    </table>"""
+    data=a.parse_sfp(html)
+    assert data["module_present"]=="Yes"
+    assert data["vendor"]=="ODI"
+    assert data["part_number"]=="DFP-34X-2IY3"
+    assert data["serial_number"]=="XPON26080833"
+    assert data["current_ma"]==0
+    assert data["rx_dbm"]==-40
