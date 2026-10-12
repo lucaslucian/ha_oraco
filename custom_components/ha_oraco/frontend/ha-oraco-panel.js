@@ -130,11 +130,30 @@ class HaOracoPanel extends HTMLElement {
   snapshots(switchId,kind,label) {
     const key=switchId+"|snapshots|__total__|24|"+kind;
     const result=this.historyViews[key];
-    if(!result) return '<button class="history-action" data-snapshot-switch="'+this.escape(switchId)+'" data-snapshot-kind="'+kind+'">Histórico · '+this.escape(label)+' (90 dias)</button>';
-    if(result.loading) return '<p class="muted">Carregando histórico…</p>';
-    if(result.error) return '<p class="muted">'+this.escape(result.error)+'</p>';
-    return '<div class="snapshot-list"><h4>Histórico de '+this.escape(label)+'</h4>'+
-      (result.items.length?result.items.map(r=>'<details><summary>'+new Date(r.timestamp).toLocaleString("pt-BR")+'</summary><pre>'+this.escape(JSON.stringify(r.data,null,2))+'</pre></details>').join(''):'<p class="muted">Nenhum registro no período.</p>')+'</div>';
+    if(!result)return '<button class="history-action" data-snapshot-switch="'+this.escape(switchId)+'" data-snapshot-kind="'+kind+'">Ver histórico · '+this.escape(label)+' (90 dias)</button>';
+    if(result.loading)return '<p class="muted">Carregando histórico…</p>';
+    if(result.error)return '<p class="muted">'+this.escape(result.error)+'</p>';
+    const grouped=new Map();
+    for(const record of result.items){
+      const date=new Date(record.timestamp);
+      const day=Number.isNaN(date.getTime())?String(record.timestamp).slice(0,10):date.toLocaleDateString("pt-BR");
+      if(!grouped.has(day))grouped.set(day,[]);
+      grouped.get(day).push(record);
+    }
+    const display=Object.entries;
+    const nice=(data,depth=0)=>{
+      if(!data||typeof data!=="object")return '<span>'+this.escape(data)+'</span>';
+      if(Array.isArray(data))return '<span>'+this.escape(data.join(", "))+'</span>';
+      return '<div class="history-fields">'+display(data).map(([key,value])=>'<div class="history-field"><span>'+
+        this.escape(this.sfpLabel(key))+'</span><strong>'+
+        (value&&typeof value==="object"?nice(value,depth+1):this.escape(value))+'</strong></div>').join('')+'</div>';
+    };
+    return '<div class="snapshot-list"><h4>Registros de '+this.escape(label)+' · últimos 90 dias</h4>'+
+      (grouped.size?[...grouped].map(([day,items])=>'<details class="snapshot-day"><summary>'+this.escape(day)+' · '+items.length+
+        (items.length===1?' estado registrado':' alterações registradas')+'</summary>'+
+        items.map((r,index)=>'<details class="snapshot-revision" '+(index===0?'open':'')+'><summary>'+new Date(r.timestamp).toLocaleTimeString("pt-BR")+'</summary>'+
+          nice(r.data)+'</details>').join('')+'</details>').join(''):'<p class="muted">Nenhum registro no período.</p>')+
+      '<p class="footnote">Um novo registro é criado somente quando a leitura muda. Em dias sem alterações, permanece válido o último estado conhecido.</p></div>';
   }
   trafficChart(id, port=null) {
     const sw=(this.data?.switches||[]).find(x=>x.id===id);
@@ -259,22 +278,22 @@ class HaOracoPanel extends HTMLElement {
             root_priority:"Prioridade da raiz",root_mac:"MAC da raiz",root_path_cost:"Custo até a raiz",
             root_port:"Porta raiz",root_max_age:"Max Age da raiz",root_hello_time:"Hello da raiz",
             root_forward_delay:"Forward Delay da raiz"};
-          body+='<section class="card"><h3>STP / RSTP global</h3><p class="section-subtitle">Estado atual: '+(global.enabled?'Ativado':'Desativado')+'</p><div class="detail-grid">'
+          body+='<section class="card"><h3>STP / RSTP global <span class="help-tip" role="img" tabindex="0" aria-label="Protocolo de proteção contra loops. Quando desativado, os parâmetros configurados não significam proteção ativa." title="Protocolo de proteção contra loops. Quando desativado, os parâmetros configurados não significam proteção ativa.">?</span></h3><p class="section-subtitle">Estado atual: '+(global.enabled?'Ativado':'Desativado')+'</p><div class="detail-grid">'
             +Object.entries(global).filter(([k])=>k!=="enabled").map(([k,v])=>'<div class="detail-item"><small>'+this.escape(labels[k]||k)+'</small><strong>'+this.escape(v)+'</strong></div>').join('')
             +'</div>'+this.snapshots(sw.id,'stp_global','STP global')+'</section>';
         }
         const aggregate=net.aggregation;
         if(aggregate) {
-          body+='<section class="card"><h3>Agregação de portas</h3><p class="section-subtitle">'+this.escape(aggregate.count)+' grupo(s) identificado(s)</p>'
+          body+='<section class="card"><h3>Agregação de portas <span class="help-tip" role="img" tabindex="0" aria-label="Grupos de interfaces operando como um enlace lógico, por agregação estática ou LACP." title="Grupos de interfaces operando como um enlace lógico, por agregação estática ou LACP.">?</span></h3><p class="section-subtitle">'+this.escape(aggregate.count)+' grupo(s) identificado(s)</p>'
             +(aggregate.groups?.length?tbl(['Grupo','Tipo','Membros','Porta agregada'],aggregate.groups.map(g=>'<tr><td>'+this.escape(g.group)+'</td><td>'+this.escape(g.type)+'</td><td>'+this.escape(g.members)+'</td><td>'+this.escape(g.aggregated_port)+'</td></tr>')):'<p class="empty">Nenhum grupo de agregação configurado.</p>')+this.snapshots(sw.id,'aggregation','Agregação')+'</section>';
         }
-        body+='<section class="card"><h3>Isolamento de portas</h3><p class="section-subtitle">Listas apresentadas pelo firmware; o sentido das restrições ainda requer validação.</p>'+status(iso)
+        body+='<section class="card"><h3>Isolamento de portas <span class="help-tip" role="img" tabindex="0" aria-label="Listas de portas que o firmware associa ao isolamento. A direção do bloqueio depende do modelo; não significa automaticamente que todas estejam isoladas." title="Listas de portas que o firmware associa ao isolamento. A direção do bloqueio depende do modelo; não significa automaticamente que todas estejam isoladas.">?</span></h3><p class="section-subtitle">Listas apresentadas pelo firmware; o sentido das restrições ainda requer validação.</p>'+status(iso)
           +(iso.length?tbl(['Porta','Lista informada','Portas listadas'],iso.map(p=>'<tr><td>Porta '+this.escape(p.port)+'</td><td>'+this.escape(p.raw_list)+'</td><td>'+this.escape(p.listed_ports?.join(', '))+'</td></tr>')):'') +this.snapshots(sw.id,'isolation','Isolamento')+'</section>';
-        body+='<section class="card"><h3>Spanning Tree — portas</h3><p class="section-subtitle">Estado, função, custo e parâmetros efetivos de STP.</p>'+status(stp)
+        body+='<section class="card"><h3>Spanning Tree — portas <span class="help-tip" role="img" tabindex="0" aria-label="Estado e função STP de cada porta. Forwarding indica encaminhamento; STP global desativado não protege contra loops." title="Estado e função STP de cada porta. Forwarding indica encaminhamento; STP global desativado não protege contra loops.">?</span></h3><p class="section-subtitle">Estado, função, custo e parâmetros efetivos de STP.</p>'+status(stp)
           +(stp.length?tbl(['Porta','Estado','Função','Custo configurado','Custo efetivo','Prioridade','P2P efetivo','Edge efetivo'],stp.map(p=>
             '<tr><td>Porta '+this.escape(p.port)+'</td><td>'+this.escape(p.state)+'</td><td>'+this.escape(p.role)+'</td><td>'+this.escape(p.path_cost_config)+'</td><td>'+this.escape(p.path_cost_actual)+'</td><td>'+this.escape(p.priority)+'</td><td>'+this.escape(p.p2p_actual)+'</td><td>'+this.escape(p.edge_actual)+'</td></tr>')):'') +this.snapshots(sw.id,'stp_ports','STP por porta')+'</section>';
         const stormValue=v=>v===null||v===undefined?'Desativado':this.escape(v)+' kbit/s';
-        body+='<section class="card"><h3>Controle de tempestades</h3><p class="section-subtitle">Limites configurados por interface. Desativado não significa tráfego zero.</p>'+status(storm)
+        body+='<section class="card"><h3>Controle de tempestades <span class="help-tip" role="img" tabindex="0" aria-label="Limites que restringem tráfego broadcast, multicast e unicast desconhecido para reduzir tempestades de rede." title="Limites que restringem tráfego broadcast, multicast e unicast desconhecido para reduzir tempestades de rede.">?</span></h3><p class="section-subtitle">Limites configurados por interface. Desativado não significa tráfego zero.</p>'+status(storm)
           +(storm.length?tbl(['Porta','Broadcast','Multicast conhecido','Multicast desconhecido','Unicast desconhecido'],storm.map(p=>
             '<tr><td>Porta '+this.escape(p.port)+'</td><td>'+stormValue(p.broadcast_kbps)+'</td><td>'+stormValue(p.known_multicast_kbps)+'</td><td>'+stormValue(p.unknown_multicast_kbps)+'</td><td>'+stormValue(p.unknown_unicast_kbps)+'</td></tr>')):'') +this.snapshots(sw.id,'storm_control','Storm Control')+'</section>';
       }
@@ -345,6 +364,11 @@ class HaOracoPanel extends HTMLElement {
       .range.chosen{border-color:var(--primary-color);color:var(--primary-color);background:var(--secondary-background-color)}
       .history-action{border:1px solid var(--divider-color);border-radius:9px;padding:11px 13px;margin:16px 0;color:var(--primary-text-color)}
       .snapshot-list{margin:18px 0}.snapshot-list details{border:1px solid var(--divider-color);border-radius:8px;padding:12px;margin:7px 0}.snapshot-list summary{cursor:pointer}.snapshot-list pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px}
+      .help-tip{display:inline-grid;place-items:center;width:18px;height:18px;font-size:11px;font-weight:700;border:1px solid var(--secondary-text-color);border-radius:50%;color:var(--secondary-text-color);cursor:help;vertical-align:middle}
+      .snapshot-day,.snapshot-revision{padding:11px 13px;border:1px solid var(--divider-color);border-radius:9px;margin:8px 0;background:var(--secondary-background-color)}
+      .snapshot-revision{margin:11px 0;background:var(--card-background-color)}.snapshot-day summary,.snapshot-revision summary{cursor:pointer;font-weight:550}
+      .history-fields{display:grid;gap:6px;margin:12px 0}.history-field{display:flex;align-items:flex-start;justify-content:space-between;gap:15px;padding:8px;border-bottom:1px solid var(--divider-color);font-size:12px}
+      .history-field>span{color:var(--secondary-text-color)}.history-field>strong{font-weight:500;text-align:right;overflow-wrap:anywhere}
       .volume-strip{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:15px 0}
       .volume-strip>div{padding:16px 18px;background:var(--secondary-background-color);border-radius:10px;border:1px solid var(--divider-color)}
       .volume-strip small{display:block;color:var(--secondary-text-color);margin-bottom:8px}
