@@ -3,35 +3,69 @@ import math
 from bs4 import BeautifulSoup
 
 def parse_sfp(html):
-    soup = BeautifulSoup(html.replace("<th", "<td").replace("</th>", "</td>"), "html.parser")
+    """Decode DDMI values when raw counters are present; retain other readable fields.
+
+    Unreported or zero optical power is unknown, not a measured -40 dBm.
+    """
+    soup = BeautifulSoup(html, "html.parser")
     table = soup.find("table", class_="infotbl") or soup.find("table")
     if not table:
         raise ValueError("No SFP diagnostics table")
-    out = {}
+    raw = {}
+    aliases = {
+        "temp": "temperature_c", "temperature": "temperature_c",
+        "voltage": "voltage_v", "current": "current_ma",
+        "rxpower": "rx_dbm", "rx_power": "rx_dbm",
+        "txpower": "tx_dbm", "tx_power": "tx_dbm",
+        "vendorname": "vendor", "vendor_name": "vendor",
+        "vendor": "vendor", "partnumber": "part_number",
+        "part_number": "part_number", "serialnumber": "serial_number",
+        "serial_number": "serial_number", "wavelength": "wavelength_nm",
+    }
     for tr in table.find_all("tr"):
-        cells = tr.find_all("td")
+        cells = tr.find_all(["td", "th"], recursive=False)
         if len(cells) < 2:
             continue
-        key = cells[1].get("id") or cells[0].get_text(" ", strip=True).lower().replace(" ", "_")
-        out[key] = cells[1].get_text(" ", strip=True)
-    for source, target, scale, power in [
-        ("temp", "temperature_c", 0.00391, False),
-        ("voltage", "voltage_v", 0.0001, False),
-        ("current", "current_ma", 0.002, False),
-        ("rxpower", "rx_dbm", 0.0001, True),
-        ("txpower", "tx_dbm", 0.0001, True),
-    ]:
-        raw = out.get(source)
-        if not raw:
-            continue
-        parts = raw.split("-")
-        try:
-            if len(parts) != 2:
+        key = cells[1].get("id") or cells[0].get_text(" ", strip=True)
+        key = key.strip().lower().replace(" ", "_").replace("-", "_")
+        raw[key] = cells[1].get_text(" ", strip=True)
+    out = {}
+    ddmi = {
+        "temp": ("temperature_c", 1 / 256, False, True),
+        "voltage": ("voltage_v", 0.0001, False, False),
+        "current": ("current_ma", 0.002, False, False),
+        "rxpower": ("rx_dbm", 0.0001, True, False),
+        "txpower": ("tx_dbm", 0.0001, True, False),
+    }
+    for key, value in raw.items():
+        field = aliases.get(key, key)
+        parts = value.split("-")
+        if key in ddmi and len(parts) == 2 and all(part.strip().isdigit() for part in parts):
+            name, scale, optical, signed = ddmi[key]
+            high, low = int(parts[0]), int(parts[1])
+            if not (0 <= high <= 255 and 0 <= low <= 255):
+                out[field] = None
                 continue
-            value = (int(parts[0]) * 256 + int(parts[1])) * scale
-            out[target] = round(10 * math.log10(value), 2) if power and value > 0 else (None if power else round(value, 3))
-        except (ValueError, OverflowError):
-            continue
+            count = high * 256 + low
+            if signed and count >= 32768:
+                count -= 65536
+            measured = count * scale
+            if optical:
+                out[field] = round(10 * math.log10(measured), 2) if measured > 0 else None
+            else:
+                out[field] = round(measured, 3)
+        elif field in ("temperature_c", "voltage_v", "current_ma", "rx_dbm", "tx_dbm"):
+            # Some firmware revisions already expose human-readable values.
+            # Numeric zero optical power usually means no signal, not -40 dBm.
+            import re
+            match = re.fullmatch(r"\s*([+-]?\d+(?:\.\d+)?)\s*(?:°C|C|V|mA|dBm)?\s*", value, re.I)
+            if match:
+                number = float(match.group(1))
+                out[field] = None if field in ("rx_dbm", "tx_dbm") and number == 0 else number
+            else:
+                out[field] = None
+        else:
+            out[field] = value
     return out
 
 def parse_dhcp(html):
