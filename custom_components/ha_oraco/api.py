@@ -68,22 +68,37 @@ class HoracoClient:
 
 
     async def mac_page(self, page: int) -> str:
-        """Pagination-only CGI form, not a switch configuration change."""
+        """Read-only MAC pagination; recover expired authentication once."""
         if not 2 <= page <= 100:
             raise SwitchError("Invalid MAC table page")
         async with self.lock:
             if not self.logged_in:
                 await self._login()
             await asyncio.sleep(0.4)
-            async with self.session.post(
-                self.base + "/mac.cgi?page=fwd_tbl",
-                data={"cmd": "goto", "pageidx": str(page), "perpage": "3"},
-                cookies=self.cookie, headers={"Referer": self.base + "/mac.cgi?page=fwd_tbl"}, allow_redirects=True,
-                timeout=aiohttp.ClientTimeout(total=12),
-            ) as response:
-                if response.status != 200:
-                    raise SwitchError(f"MAC pagination HTTP {response.status}")
-                return await response.text(errors="replace")
+            for attempt in range(2):
+                async with self.session.post(
+                    self.base + "/mac.cgi?page=fwd_tbl",
+                    data={"cmd": "goto", "pageidx": str(page), "perpage": "3"},
+                    cookies=self.cookie,
+                    headers={"Referer": self.base + "/mac.cgi?page=fwd_tbl"},
+                    allow_redirects=True,
+                    timeout=aiohttp.ClientTimeout(total=12),
+                ) as response:
+                    if response.status in (401, 403) and attempt == 0:
+                        self.logged_in = False
+                        await self._login()
+                        continue
+                    if response.status != 200:
+                        raise SwitchError(f"MAC pagination HTTP {response.status}")
+                    body = await response.text(errors="replace")
+                    if re.search(r"<form[^>]+(?:login|password)", body, re.I):
+                        if attempt == 0:
+                            self.logged_in = False
+                            await self._login()
+                            continue
+                        raise SwitchError("MAC pagination authentication expired")
+                    return body
+            raise SwitchError("MAC pagination authentication expired")
 
 
 def _value(cell):
