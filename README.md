@@ -16,7 +16,7 @@
 
 Integração experimental **somente leitura** para monitorar switches Horaco e OEM com interface CGI Realtek no Home Assistant. A integração usa HACS e registra um painel na barra lateral, sem Docker ou Lovelace customizado.
 
-## Estado do desenvolvimento (0.4.20 — experimental)
+## Estado do desenvolvimento (0.4.21 — experimental)
 
 | Função | Implementação | Requer validação no switch |
 |---|---|---|
@@ -135,3 +135,8 @@ As amostras RX/TX são aceitas somente quando os contadores de bytes são válid
 ### Correções de compatibilidade OEM (0.4.20)
 
 Algumas revisões do firmware fecham etiquetas `<th>` usando `</td>` e apresentam a primeira linha do transceptor sem `<tr>` inicial. Os parsers de `/info.cgi` e `/transceiver.cgi` agora extraem os pares de campos do HTML original com tolerância a esse formato, preservando modelo, firmware, uptime, MAC e informações do módulo óptico. O subtítulo do equipamento foi movido para abaixo do nome HoraInfo no cabeçalho. A suíte automatizada inclui casos de regressão baseados nessas respostas reais.
+
+
+### Histórico em modal e MACs locais (0.4.21)
+
+Os registros das configurações e proteções agora são abertos em janela modal com navegação por dia, sem árvores de JSON deslocadas no painel. Em histórico migrado, a contagem exibida de alterações considera também eventos realmente presentes no banco. O sensor **MACs privados (atuais)** conta endereços MAC com bit de administração local entre as observações atuais; **MACs privados (histórico)** conta esses endereços retidos no SQLite. Valores zero são legítimos quando os dispositivos observados usam MACs universalmente administrados.
