@@ -142,39 +142,39 @@ class HaOracoPanel extends HTMLElement {
   }
   topologyMap(sw) {
     const ports=Object.values(sw.ports||{}).sort((a,b)=>Number(a.port)-Number(b.port));
-    if(!ports.length) return '<p class="empty">Sem interfaces identificadas.</p>';
-    const nodes=sw.topology?.nodes||[];
-    const edges=sw.topology?.edges||[];
-    const width=980, lane=90, top=90, footer=45;
-    const maxMac=15;
-    const rows=ports.map(p=>{
-      const ids=edges.filter(e=>e.from==="port:"+p.port && e.relation==="mac_learned").map(e=>e.to);
-      return {port:p,devices:ids.map(id=>nodes.find(n=>n.id===id)).filter(Boolean),hidden:Math.max(0,ids.length-maxMac)};
-    });
-    const height=top+rows.length*lane+footer;
-    const esc=v=>this.escape(v);
-    const switchBox='<rect x="12" y="15" width="255" height="52" rx="12" fill="#172d44" stroke="#3b99b4"/>'
-      +'<text x="29" y="45" fill="#eaf5ff" font-size="17" font-weight="600">Switch monitorado</text>';
-    const body=rows.map((r,i)=>{
-      const y=top+i*lane;
-      const active=!!r.port.up, color=active?"#3cbc87":"#7d8993";
-      const endpoint=380;
-      const links=r.devices.slice(0,maxMac);
-      const deviceText=links.length?links.map(n=>esc(n.label||n.mac)).join(" · "):"Nenhum MAC aprendido";
-      const summary=links.length>3?deviceText.slice(0,90)+"…":deviceText;
-      return '<path d="M140 67 V'+(y+19)+' H'+endpoint+'" fill="none" stroke="#47728c" stroke-width="1.7" opacity=".65"/>'
-        +'<rect x="300" y="'+y+'" width="165" height="44" rx="9" fill="#182b3b" stroke="'+color+'" stroke-width="1.2"/>'
-        +'<circle cx="317" cy="'+(y+22)+'" r="5" fill="'+color+'"/>'
-        +'<text x="332" y="'+(y+18)+'" fill="#eaf5ff" font-size="13">Porta '+esc(r.port.port)+'</text>'
-        +'<text x="332" y="'+(y+34)+'" fill="#9aafbf" font-size="10">'+esc(r.port.speed||"—")+'</text>'
-        +'<path d="M465 '+(y+22)+' H535" fill="none" stroke="'+color+'" stroke-width="1.7" opacity=".8"/>'
-        +'<rect x="535" y="'+y+'" width="410" height="44" rx="9" fill="#122739" stroke="#466175"/>'
-        +'<text x="550" y="'+(y+18)+'" fill="#eaf5ff" font-size="12">'+esc(links.length+(r.hidden||0))+' MACs observados</text>'
-        +'<text x="550" y="'+(y+34)+'" fill="#a3b4c1" font-size="10">'+esc(summary)+'</text>';
-    }).join("");
-    const diagram='<div class="topology-scroll"><svg class="topology-svg" viewBox="0 0 '+width+' '+height+'" role="img" aria-label="Topologia lógica do switch, portas e MACs">'
-      +switchBox+body+'</svg></div>';
-    return diagram+'<p class="topology-disclaimer">As conexões indicam MACs aprendidos em cada porta e não confirmam ligações físicas diretas. A exibição resume até 15 MACs por porta.</p>';
+    const nodes=sw.topology?.nodes||[],edges=sw.topology?.edges||[];
+    if(!ports.length)return '<p class="empty">Sem interfaces identificadas.</p>';
+    const rows=ports.map(port=>({
+      port, devices:edges.filter(e=>e.from==="port:"+port.port&&e.relation==="mac_learned")
+        .map(e=>nodes.find(n=>n.id===e.to)).filter(Boolean)
+    }));
+    const width=1010, lineHeight=42, gap=22;
+    const totalHeight=115+rows.reduce((sum,r)=>sum+Math.max(1,r.devices.length)*lineHeight+gap,0);
+    let y=100;
+    const parts=['<rect x="18" y="16" width="220" height="55" rx="12" fill="#14324a" stroke="#28b8d3"/>',
+      '<text x="37" y="50" fill="#e9f5ff" font-size="17">Switch monitorado</text>'];
+    for(const row of rows){
+      const length=Math.max(1,row.devices.length),start=y,end=y+length*lineHeight-10,mid=(start+end)/2;
+      const status=row.port.up?"#3bbb84":"#6f8494";
+      parts.push('<path d="M130 71 V'+mid+' H290" stroke="#376c82" stroke-width="1.5" fill="none"/>',
+        '<rect x="290" y="'+(mid-22)+'" width="175" height="44" rx="9" fill="#152c3e" stroke="'+status+'"/>',
+        '<circle cx="307" cy="'+mid+'" r="5" fill="'+status+'"/>',
+        '<text x="324" y="'+(mid-3)+'" font-size="13" fill="#e8f5ff">Porta '+this.escape(row.port.port)+'</text>',
+        '<text x="324" y="'+(mid+13)+'" font-size="10" fill="#a2b5c2">'+this.escape(row.port.speed||"—")+'</text>');
+      if(!row.devices.length){
+        parts.push('<path d="M465 '+mid+' H525" stroke="#47667a"/>',
+          '<text x="545" y="'+(mid+5)+'" font-size="12" fill="#879bad">Nenhum MAC aprendido</text>');
+      } else row.devices.forEach((device,index)=>{
+        const cy=y+index*lineHeight+14;
+        const mac=device.mac||device.label||device.id||"Dispositivo";
+        parts.push('<path d="M465 '+mid+' H497 V'+cy+' H535" stroke="'+status+'" stroke-width="1.4" fill="none"/>',
+          '<rect x="535" y="'+(cy-16)+'" width="444" height="34" rx="8" fill="#14283b" stroke="#375972"/>',
+          '<circle cx="550" cy="'+cy+'" r="4" fill="#45a7d7"/>',
+          '<text x="563" y="'+(cy+4)+'" font-size="12" fill="#e5f3ff">'+this.escape(mac)+'</text>');
+      });
+      y+=length*lineHeight+gap;
+    }
+    return '<div class="topology-scroll"><svg class="topology-svg" role="img" aria-label="Conexões lógicas individuais dos MACs por porta" viewBox="0 0 '+width+' '+totalHeight+'">'+parts.join('')+'</svg></div><p class="topology-disclaimer">Cada MAC aprendido é representado individualmente. A tabela MAC indica aprendizado lógico, não ligação física direta.</p>';
   }
   escape(v) {
     return String(v ?? "—").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -192,7 +192,7 @@ class HaOracoPanel extends HTMLElement {
       const fmt = n => n >= 1e9 ? (n/1e9).toFixed(2)+" Gb/s" : n>=1e6 ? (n/1e6).toFixed(1)+" Mb/s" : n>=1e3 ? (n/1e3).toFixed(1)+" kb/s" : n.toFixed(0)+" b/s";
       const peak=number=>sw.peaks?.ports?.[number]||{};
       const row = (p) => '<tr><td>Porta '+this.escape(p.port)+'</td><td><span class="dot '+(p.up?"ok":"")+'"></span>'+(p.up?"Ativa":"Inativa")+'</td><td>'+this.escape(p.speed)+'</td><td>'+fmt(Number(p.rx_bps)||0)+'</td><td>'+fmt(Number(p.tx_bps)||0)+'</td><td>'+fmt(peak(p.port).rx_bps||0)+'</td><td>'+fmt(peak(p.port).tx_bps||0)+'</td></tr>';
-      body += '<div class="heading"><h2>'+this.escape(sw.name)+'</h2><span>'+this.escape(sw.host)+'</span></div>';
+      body += '<div class="heading"><div class="switch-subtitle">Equipamento monitorado · '+this.escape(sw.device?.name||sw.device?.model||sw.host)+'</div></div>';
       if (this.tab === "overview") {
         body += '<div class="stats"><section class="card metric"><small>Portas ativas</small><strong>'+online+' / '+ps.length+'</strong></section><section class="card metric"><small>Tráfego RX</small><strong>'+fmt(rate("rx"))+'</strong></section><section class="card metric"><small>Tráfego TX</small><strong>'+fmt(rate("tx"))+'</strong></section><section class="card metric"><small>Firmware</small><strong class="small">'+this.escape(sw.device?.firmware)+'</strong></section></div>';
         body += '<div class="peak-strip"><span>Picos registrados nos últimos 30 dias</span><strong>↓ RX '+fmt(sw.peaks?.total?.rx_bps||0)+'</strong><strong>↑ TX '+fmt(sw.peaks?.total?.tx_bps||0)+'</strong><span class="overview-macs">'+this.escape(sw.mac?.mac_known??0)+' MACs conhecidos</span></div>';
