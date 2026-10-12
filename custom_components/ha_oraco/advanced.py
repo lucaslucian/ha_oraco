@@ -28,7 +28,8 @@ def parse_sfp(html):
     # </td> and the initial Port row lacks its opening <tr>. BeautifulSoup's
     # html.parser nests these cells and yields no direct th/td pairs.
     # Extract the narrow label/value pattern from the original table HTML.
-    table_html = str(table)
+    # Use original source: BeautifulSoup may restructure malformed cell closures.
+    table_html = html
     for match in re.finditer(
         r"<th\\b[^>]*>(.*?)</(?:th|td)\\s*>\\s*<td\\b([^>]*)>(.*?)</td\\s*>",
         table_html, re.I | re.S,
