@@ -122,8 +122,8 @@ class HistoryDatabase:
 
     def _traffic_summary(self):
         with self._connect() as db:
-            peaks = db.execute("""SELECT port,MAX(rx_bps),MAX(tx_bps)
-                FROM traffic WHERE switch_id=? GROUP BY port""", (self.key,)).fetchall()
+            peaks = db.execute("""SELECT port,MAX(peak_rx),MAX(peak_tx)
+                FROM traffic_5m WHERE switch_id=? GROUP BY port""", (self.key,)).fetchall()
             series = db.execute("""SELECT timestamp,rx_bps,tx_bps FROM traffic
                 WHERE switch_id=? AND port='__total__'
                 ORDER BY timestamp DESC LIMIT 240""", (self.key,)).fetchall()
@@ -138,7 +138,7 @@ class HistoryDatabase:
                           "tx_bps": next((r[2] for r in peaks if r[0]=="__total__"), 0)},
                 "ports": {r[0]: {"rx_bps": r[1], "tx_bps": r[2]}
                           for r in peaks if r[0]!="__total__"},
-                "scope": "retained_14_days",
+                "scope": "retained_30_days",
             },
             "traffic_by_port": by_port,
             "traffic_history": [{"timestamp": r[0], "rx": r[1], "tx": r[2]}
