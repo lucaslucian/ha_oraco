@@ -16,7 +16,7 @@
 
 Integração experimental **somente leitura** para monitorar switches Horaco e OEM com interface CGI Realtek no Home Assistant. A integração usa HACS e registra um painel na barra lateral, sem Docker ou Lovelace customizado.
 
-## Estado do desenvolvimento (0.4.21 — experimental)
+## Estado do desenvolvimento (0.4.22 — experimental)
 
 | Função | Implementação | Requer validação no switch |
 |---|---|---|
@@ -140,3 +140,8 @@ Algumas revisões do firmware fecham etiquetas `<th>` usando `</td>` e apresenta
 ### Histórico em modal e MACs locais (0.4.21)
 
 Os registros das configurações e proteções agora são abertos em janela modal com navegação por dia, sem árvores de JSON deslocadas no painel. Em histórico migrado, a contagem exibida de alterações considera também eventos realmente presentes no banco. O sensor **MACs privados (atuais)** conta endereços MAC com bit de administração local entre as observações atuais; **MACs privados (histórico)** conta esses endereços retidos no SQLite. Valores zero são legítimos quando os dispositivos observados usam MACs universalmente administrados.
+
+
+### Identificação no mapa (0.4.22)
+
+O mapa associa os MACs observados aos fabricantes armazenados no histórico SQLite e à base OUI atualmente carregada, mesmo quando o registro em memória da coleta ainda está desatualizado. Quando existe nome de dispositivo, ele tem prioridade. Caso contrário, o mapa apresenta o fabricante conhecido junto do endereço MAC; se o fabricante não estiver identificado, mostra somente o MAC. Uma consulta OUI informa fabricante, **não o nome de host do dispositivo**: nomes de host dependem de fonte adicional como DHCP/mDNS ou identificação manual.
