@@ -52,21 +52,24 @@ class HistoryDatabase:
                 if name not in cols:
                     db.execute(f"ALTER TABLE traffic_5m ADD COLUMN {name} INTEGER NOT NULL DEFAULT 0")
 
-            # Upgrade existing installations: retain legacy raw history in the 5-minute series.
-            db.execute("""INSERT OR IGNORE INTO traffic_5m
-                (switch_id,bucket,port,rx_sum,tx_sum,count,peak_rx,peak_tx)
-                SELECT switch_id,
-                    substr(timestamp,1,14) ||
-                    printf('%02d',CAST(substr(timestamp,15,2) AS INTEGER)/5*5) ||
-                    ':00+00:00',
-                    port,SUM(rx_bps),SUM(tx_bps),COUNT(*),MAX(rx_bps),MAX(tx_bps)
-                FROM traffic
-                WHERE rx_bps>=0 AND tx_bps>=0
-                GROUP BY switch_id,
-                    substr(timestamp,1,14) ||
-                    printf('%02d',CAST(substr(timestamp,15,2) AS INTEGER)/5*5) ||
-                    ':00+00:00',port
-            """)
+            # Legacy migration must run only once; otherwise a subsequent restart
+            # can reinsert expired data and change previously consolidated values.
+            version = db.execute("PRAGMA user_version").fetchone()[0]
+            if version < 1:
+                db.execute("""INSERT OR IGNORE INTO traffic_5m
+                    (switch_id,bucket,port,rx_sum,tx_sum,count,peak_rx,peak_tx)
+                    SELECT switch_id,
+                        substr(timestamp,1,14) ||
+                        printf('%02d',CAST(substr(timestamp,15,2) AS INTEGER)/5*5) ||
+                        ':00+00:00',port,
+                        SUM(rx_bps),SUM(tx_bps),COUNT(*),MAX(rx_bps),MAX(tx_bps)
+                    FROM traffic WHERE rx_bps>=0 AND tx_bps>=0
+                    GROUP BY switch_id,
+                        substr(timestamp,1,14) ||
+                        printf('%02d',CAST(substr(timestamp,15,2) AS INTEGER)/5*5) ||
+                        ':00+00:00',port
+                """)
+                db.execute("PRAGMA user_version=1")
 
             db.execute("""CREATE TABLE IF NOT EXISTS mac_inventory (
                 switch_id TEXT NOT NULL, vlan TEXT NOT NULL, mac TEXT NOT NULL,
@@ -116,7 +119,7 @@ class HistoryDatabase:
             buckets.append((self.key,bucket,number,rx,tx,1,rx,tx))
             counters = (port.get("rx_bytes"), port.get("tx_bytes"))
             previous = self.previous_counters.get(number)
-            if all(isinstance(x,int) for x in counters):
+            if all(isinstance(x,int) and not isinstance(x,bool) and x>=0 for x in counters):
                 if previous and all(new >= old for new,old in zip(counters,previous)):
                     drx = counters[0]-previous[0]
                     dtx = counters[1]-previous[1]
@@ -133,7 +136,7 @@ class HistoryDatabase:
             daily.append((self.key,day,"__total__",bytes_rx,bytes_tx))
             increments["__total__"]=(bytes_rx,bytes_tx)
         with self._connect() as db:
-            db.executemany("INSERT OR REPLACE INTO traffic VALUES(?,?,?,?,?)",raw_rows)
+            db.executemany("INSERT OR REPLACE INTO traffic (switch_id,timestamp,port,rx_bps,tx_bps) VALUES(?,?,?,?,?)",raw_rows)
             db.executemany("""INSERT INTO traffic_5m (switch_id,bucket,port,rx_sum,tx_sum,count,peak_rx,peak_tx) VALUES(?,?,?,?,?,?,?,?)
                 ON CONFLICT(switch_id,bucket,port) DO UPDATE SET
                 rx_sum=rx_sum+excluded.rx_sum,tx_sum=tx_sum+excluded.tx_sum,
@@ -144,7 +147,7 @@ class HistoryDatabase:
                     tx_bytes=tx_bytes+? WHERE switch_id=? AND bucket=? AND port=?""",
                     [(values[0],values[1],self.key,bucket,num) for num,values in increments.items()])
             if daily:
-                db.executemany("""INSERT INTO daily_traffic VALUES(?,?,?,?,?)
+                db.executemany("""INSERT INTO daily_traffic (switch_id,day,port,rx_bytes,tx_bytes) VALUES(?,?,?,?,?)
                     ON CONFLICT(switch_id,day,port) DO UPDATE SET
                     rx_bytes=rx_bytes+excluded.rx_bytes,
                     tx_bytes=tx_bytes+excluded.tx_bytes""",daily)
@@ -201,10 +204,16 @@ class HistoryDatabase:
                 vendor=CASE WHEN excluded.vendor IN ('Desconhecido','') OR excluded.vendor IS NULL
                   THEN mac_inventory.vendor ELSE excluded.vendor END,
                 classification=excluded.classification,
-                first_seen=CASE WHEN mac_inventory.first_seen < excluded.first_seen
-                  THEN mac_inventory.first_seen ELSE excluded.first_seen END,
-                last_seen=CASE WHEN mac_inventory.last_seen > excluded.last_seen
-                  THEN mac_inventory.last_seen ELSE excluded.last_seen END
+                first_seen=CASE
+                    WHEN mac_inventory.first_seen IS NULL THEN excluded.first_seen
+                    WHEN excluded.first_seen IS NULL THEN mac_inventory.first_seen
+                    WHEN mac_inventory.first_seen <= excluded.first_seen THEN mac_inventory.first_seen
+                    ELSE excluded.first_seen END,
+                last_seen=CASE
+                    WHEN mac_inventory.last_seen IS NULL THEN excluded.last_seen
+                    WHEN excluded.last_seen IS NULL THEN mac_inventory.last_seen
+                    WHEN mac_inventory.last_seen >= excluded.last_seen THEN mac_inventory.last_seen
+                    ELSE excluded.last_seen END
             """, values)
 
     async def record_inventory(self, records):
