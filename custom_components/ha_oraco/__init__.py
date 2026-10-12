@@ -117,6 +117,8 @@ class HoracoCoordinator(DataUpdateCoordinator[dict]):
                             self.cache["device"]["firmware"] = parsed["version"]
                         else:
                             self.cache["sfp" if name == "sfp" else "network"][name] = parsed
+                        if self.history_db and name != "firmware_page":
+                            await self.history_db.record_snapshot(name, parsed)
                         self.last[name] = now
                         self.diagnostics["endpoints"][name] = {"status": "ok", "last_success": datetime.now(timezone.utc).isoformat()}
                     except Exception as err:
