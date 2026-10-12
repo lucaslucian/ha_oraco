@@ -31,13 +31,13 @@ def parse_sfp(html):
     # Use original source: BeautifulSoup may restructure malformed cell closures.
     table_html = html
     for match in re.finditer(
-        r"<th\\b[^>]*>(.*?)</(?:th|td)\\s*>\\s*<td\\b([^>]*)>(.*?)</td\\s*>",
+        r"<th\b[^>]*>(.*?)</(?:th|td)\s*>\s*<td\b([^>]*)>(.*?)</td\s*>",
         table_html, re.I | re.S,
     ):
         label = BeautifulSoup(match.group(1), "html.parser").get_text(" ", strip=True)
         td_attrs = match.group(2)
         value = BeautifulSoup(match.group(3), "html.parser").get_text(" ", strip=True)
-        identity = re.search(r'\\bid\\s*=\\s*["\\\']?([\\w-]+)', td_attrs, re.I)
+        identity = re.search(r'\bid\s*=\s*["\\\']?([\\w-]+)', td_attrs, re.I)
         key = (identity.group(1) if identity else label).strip().lower().replace(" ", "_").replace("-", "_")
         if key:
             raw[key] = value
