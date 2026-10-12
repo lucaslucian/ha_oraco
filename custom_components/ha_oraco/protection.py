@@ -9,16 +9,27 @@ def _port(value):
 
 
 def _status_table(soup, required_headers):
-    """Find a populated status table outside all POST forms."""
+    """Select a populated status table, even if firmware wraps it in a POST form.
+
+    A status table must have concrete port rows and cannot contain editable controls.
+    """
+    candidates = []
     for table in soup.find_all("table"):
-        if table.find_parent("form") is not None:
+        if table.find(["input", "select", "textarea", "button"]):
             continue
         rows = table.find_all("tr")
-        if not rows:
+        if len(rows) < 2:
             continue
         headers = [c.get_text(" ", strip=True).lower() for c in rows[0].find_all(["th", "td"])]
-        if all(any(term in h for h in headers) for term in required_headers):
-            return table
+        if not all(any(term in h for h in headers) for term in required_headers):
+            continue
+        valid_rows = sum(1 for row in rows[1:] if row.find("td") and
+                         _port(row.find("td").get_text(" ", strip=True)))
+        if valid_rows:
+            candidates.append((table.find_parent("form") is not None, -valid_rows, table))
+    if candidates:
+        candidates.sort(key=lambda c: (c[0], c[1]))
+        return candidates[0][2]
     raise ValueError("Protection status table not found")
 
 
