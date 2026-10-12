@@ -6,7 +6,7 @@ from .const import DOMAIN
 def device_info(coordinator):
     device = coordinator.data["device"]
     return DeviceInfo(identifiers={(DOMAIN, coordinator.client.host)},
-                      name=f"Horaco {coordinator.client.host}", manufacturer="HORACO / OEM",
+                      name=device.get("name") or device.get("model") or f"Switch {coordinator.client.host}", manufacturer="HORACO / OEM",
                       model=device.get("model"), sw_version=device.get("firmware"),
                       configuration_url=coordinator.client.base)
 
