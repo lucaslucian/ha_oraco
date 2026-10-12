@@ -1,5 +1,6 @@
 """Read-only parsers based on documented HORACO CGI response layouts."""
 import math
+import re
 from bs4 import BeautifulSoup
 
 def parse_sfp(html):
@@ -38,10 +39,23 @@ def parse_sfp(html):
         "txpower": ("tx_dbm", 0.0001, True, False),
     }
     for key, value in raw.items():
-        field = aliases.get(key, key)
+        normalized = re.sub(r"[^a-z0-9]+", "_", key).strip("_")
+        mapping = {"oe_present":"module_present","loss_of_signal":"loss_of_signal",
+            "transceiver_type":"transceiver","connector_type":"connector",
+            "eth_compliance_codes":"compliance","transmission_media":"media",
+            "vendor_oui":"vendor_oui","vendor_pn":"part_number",
+            "vendor_revision":"revision","vendor_sn":"serial_number",
+            "date_code":"manufacture_date","temperature_c":"temperature_c",
+            "voltage_v":"voltage_v","current_ma":"current_ma",
+            "output_power_dbm":"tx_dbm","input_power_dbm":"rx_dbm",
+            "wavelength":"wavelength_nm","vendor_name":"vendor"}
+        field = mapping.get(normalized, aliases.get(key, normalized))
         parts = value.split("-")
-        if key in ddmi and len(parts) == 2 and all(part.strip().isdigit() for part in parts):
-            name, scale, optical, signed = ddmi[key]
+        raw_kind = key if key in ddmi else {"temperature_c":"temp",
+            "voltage_v":"voltage","current_ma":"current",
+            "tx_dbm":"txpower","rx_dbm":"rxpower"}.get(field)
+        if raw_kind in ddmi and len(parts) == 2 and all(part.strip().isdigit() for part in parts):
+            name, scale, optical, signed = ddmi[raw_kind]
             high, low = int(parts[0]), int(parts[1])
             if not (0 <= high <= 255 and 0 <= low <= 255):
                 out[field] = None
@@ -51,7 +65,8 @@ def parse_sfp(html):
                 count -= 65536
             measured = count * scale
             if optical:
-                out[field] = round(10 * math.log10(measured), 2) if measured > 0 else None
+                mw = round(measured, 2)
+                out[field] = round(10 * math.log10(mw), 2) if mw > 0 else None
             else:
                 out[field] = round(measured, 3)
         elif field in ("temperature_c", "voltage_v", "current_ma", "rx_dbm", "tx_dbm"):
@@ -66,6 +81,8 @@ def parse_sfp(html):
                 out[field] = None
         else:
             out[field] = value
+    if not any(k in out for k in ("module_present", "temperature_c", "vendor", "transceiver")):
+        raise ValueError("Unsupported SFP diagnostics page")
     return out
 
 def parse_dhcp(html):
