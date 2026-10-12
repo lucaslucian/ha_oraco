@@ -1,17 +1,29 @@
 """SQLite history integration tests without Home Assistant runtime."""
 import asyncio
 import importlib.util
+import sys
+import types
+import time
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
 
 def load():
-    path=Path(__file__).resolve().parents[1]/"custom_components"/"ha_oraco"/"history.py"
-    spec=importlib.util.spec_from_file_location("hora_history",path)
+    directory=Path(__file__).resolve().parents[1]/"custom_components"/"ha_oraco"
+    package=types.ModuleType("hora_history_test_package")
+    package.__path__=[str(directory)]
+    sys.modules[package.__name__]=package
+    helper_spec=importlib.util.spec_from_file_location(
+        "hora_history_test_package.traffic_guard",directory/"traffic_guard.py")
+    helper=importlib.util.module_from_spec(helper_spec)
+    sys.modules[helper_spec.name]=helper
+    helper_spec.loader.exec_module(helper)
+    spec=importlib.util.spec_from_file_location(
+        "hora_history_test_package.history",directory/"history.py")
     module=importlib.util.module_from_spec(spec)
+    sys.modules[spec.name]=module
     spec.loader.exec_module(module)
     return module
-
 
 class FakeHass:
     def __init__(self, root):
@@ -90,6 +102,7 @@ def test_30_day_buckets_daily_traffic_and_history_filters():
         # Initial counters establish the baseline; they are not counted as traffic.
         await db.record_traffic({"2":{"rx_bps":1500,"tx_bps":900,
                                      "rx_bytes":10000,"tx_bytes":30000}})
+        await asyncio.sleep(0.05)
         await db.record_traffic({"2":{"rx_bps":2500,"tx_bps":1200,
                                      "rx_bytes":12000,"tx_bytes":35000}})
         totals=await db.daily_totals("2")
@@ -134,6 +147,7 @@ def test_restart_restores_recent_baselines_and_avoids_double_counts():
         second = factory(FakeHass(root), "restart")
         await second.initialize()
         assert second.previous_counters["2"] == (1000, 2000)
+        await asyncio.sleep(0.05)
         await second.record_traffic({"2": {"rx_bps":120, "tx_bps":80,
                                           "rx_bytes":1300, "tx_bytes":2500}})
         values = await second.daily_totals("2")
