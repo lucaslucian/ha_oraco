@@ -82,6 +82,11 @@ class HistoryDatabase:
             series = db.execute("""SELECT timestamp,rx_bps,tx_bps FROM traffic
                 WHERE switch_id=? AND port='__total__'
                 ORDER BY timestamp DESC LIMIT 240""", (self.key,)).fetchall()
+            by_port = {}
+            for (number,) in db.execute("SELECT DISTINCT port FROM traffic WHERE switch_id=? AND port!='__total__' LIMIT 64", (self.key,)).fetchall():
+                data = db.execute("""SELECT timestamp,rx_bps,tx_bps FROM traffic
+                    WHERE switch_id=? AND port=? ORDER BY timestamp DESC LIMIT 120""", (self.key,number)).fetchall()
+                by_port[number] = [{"timestamp":row[0], "rx":row[1], "tx":row[2]} for row in reversed(data)]
         return {
             "peaks": {
                 "total": {"rx_bps": next((r[1] for r in peaks if r[0]=="__total__"), 0),
@@ -90,6 +95,7 @@ class HistoryDatabase:
                           for r in peaks if r[0]!="__total__"},
                 "scope": "retained_14_days",
             },
+            "traffic_by_port": by_port,
             "traffic_history": [{"timestamp": r[0], "rx": r[1], "tx": r[2]}
                                 for r in reversed(series)],
         }
