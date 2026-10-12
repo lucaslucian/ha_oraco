@@ -21,6 +21,7 @@ from .firmware import parse_firmware
 from .protection import parse_isolation, parse_stp_ports, parse_storm_control
 from .bridging import parse_stp_global, parse_aggregation
 from .panel import register_panel
+from .history import HistoryDatabase
 
 _LOGGER = logging.getLogger(__name__)
 PLATFORMS = [Platform.SENSOR, Platform.BINARY_SENSOR]
@@ -36,6 +37,7 @@ class HoracoCoordinator(DataUpdateCoordinator[dict]):
         self.cache = {"device": {}, "ports": {}, "mac": {}, "sfp": {}, "network": {}}
         self.inventory = None
         self.vendors = None
+        self.history_db = None
         self.diagnostics = {"endpoints": {}, "last_success": None, "last_error": None}
         self.prev_bytes = {}
         self.prev_time = None
@@ -75,6 +77,14 @@ class HoracoCoordinator(DataUpdateCoordinator[dict]):
                 "scope": "since_integration_start",
             }
             self.cache["ports"] = ports
+            if self.history_db:
+                try:
+                    await self.history_db.record_traffic(ports)
+                    history = await self.history_db.traffic_summary()
+                    self.cache["peaks"] = history["peaks"]
+                    self.cache["traffic_history"] = history["traffic_history"]
+                except Exception as err:
+                    _LOGGER.warning("HoraInfo traffic history error: %s", type(err).__name__)
             self.diagnostics["last_success"] = datetime.now(timezone.utc).isoformat()
             self.diagnostics["last_error"] = None
             if "device" not in self.last or now - self.last["device"] >= INTERVALS["device"]:
@@ -121,6 +131,11 @@ class HoracoCoordinator(DataUpdateCoordinator[dict]):
                         rows.extend(more)
                     await self.inventory.observe(rows, self.vendors)
                     self.cache["mac"] = self.inventory.summary()
+                    if self.history_db:
+                        try:
+                            await self.history_db.record_inventory(self.inventory.history.values())
+                        except Exception as err:
+                            _LOGGER.warning("HoraInfo MAC history error: %s", type(err).__name__)
                     self.last["mac"] = now
                     self.diagnostics["endpoints"]["mac"] = {"status": "ok", "last_success": datetime.now(timezone.utc).isoformat()}
                 except Exception as err:
@@ -144,6 +159,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                           entry.data.get(CONF_PORT, 80), entry.data[CONF_USERNAME],
                           entry.data[CONF_PASSWORD])
     coordinator = HoracoCoordinator(hass, client, entry)
+    coordinator.history_db = HistoryDatabase(hass, f"{client.host}_{entry.data.get(CONF_PORT, 80)}")
+    try:
+        await coordinator.history_db.initialize()
+    except Exception as err:
+        _LOGGER.warning("HoraInfo database init error: %s", type(err).__name__)
+        coordinator.history_db = None
     coordinator.inventory = MacInventory(hass, f"{client.host}_{entry.data.get(CONF_PORT, 80)}")
     await coordinator.inventory.load()
     data = hass.data.setdefault(DOMAIN, {})
@@ -153,6 +174,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         await vendors.load()
         data["_vendors"] = vendors
     coordinator.vendors = vendors
+    if coordinator.history_db:
+        try:
+            await coordinator.history_db.record_inventory(coordinator.inventory.history.values())
+            previous = await coordinator.history_db.traffic_summary()
+            coordinator.cache["peaks"] = previous["peaks"]
+            coordinator.cache["traffic_history"] = previous["traffic_history"]
+        except Exception as err:
+            _LOGGER.warning("HoraInfo history restore error: %s", type(err).__name__)
     coordinator.cache["mac"] = coordinator.inventory.summary()
     await coordinator.async_config_entry_first_refresh()
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
@@ -166,7 +195,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             try:
                 stamp = datetime.fromisoformat(vendors.last_updated) if vendors.last_updated else None
                 if stamp is None or datetime.now(timezone.utc) - stamp >= timedelta(days=30):
-                    await vendors.refresh(async_get_clientsession(hass))
+                    count = await vendors.refresh(async_get_clientsession(hass))
+                    _LOGGER.info("HoraInfo IEEE OUI prefixes available: %d", count)
+                    if count:
+                        for item in hass.data.get(DOMAIN, {}).values():
+                            if not isinstance(item, HoracoCoordinator):
+                                continue
+                            await item.inventory.reclassify(vendors)
+                            item.cache["mac"] = item.inventory.summary()
+                            if item.history_db:
+                                await item.history_db.record_inventory(item.inventory.history.values())
+                            item.async_set_updated_data(dict(item.cache))
             except Exception as exc:
                 _LOGGER.debug("IEEE vendor registry update failed: %s", type(exc).__name__)
             finally:
