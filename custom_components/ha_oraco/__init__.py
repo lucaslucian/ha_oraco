@@ -192,10 +192,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         data["_vendors"] = vendors
     coordinator.vendors = vendors
     if vendors.prefixes:
-        await coordinator.inventory.reclassify(vendors)
-        if coordinator.history_db:
-            await coordinator.history_db.reclassify_inventory(vendors)
-        coordinator.cache["mac"] = coordinator.inventory.summary()
+        try:
+            await coordinator.inventory.reclassify(vendors)
+            if coordinator.history_db:
+                await coordinator.history_db.reclassify_inventory(vendors)
+            coordinator.cache["mac"] = coordinator.inventory.summary()
+        except Exception as err:
+            _LOGGER.warning("HoraInfo MAC vendor reclassification error: %s", type(err).__name__)
     if coordinator.history_db:
         try:
             await coordinator.history_db.record_inventory(coordinator.inventory.history.values())
@@ -230,9 +233,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                             await item.inventory.reclassify(vendors)
                             item.cache["mac"] = item.inventory.summary()
                             if item.history_db:
-                                await item.history_db.reclassify_inventory(vendors)
-                                await item.history_db.record_inventory(item.inventory.history.values())
-                                item.cache["mac"].update(await item.history_db.inventory_summary())
+                                try:
+                                    await item.history_db.reclassify_inventory(vendors)
+                                    await item.history_db.record_inventory(item.inventory.history.values())
+                                    item.cache["mac"].update(await item.history_db.inventory_summary())
+                                except Exception as history_err:
+                                    _LOGGER.warning("HoraInfo MAC vendor database update failed: %s", type(history_err).__name__)
                             item.async_set_updated_data(dict(item.cache))
             except Exception as exc:
                 _LOGGER.debug("IEEE vendor registry update failed: %s", type(exc).__name__)
