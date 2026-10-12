@@ -27,7 +27,7 @@ def test_stp_status_ignores_form_defaults():
 
 def test_storm_control_status_not_defaults():
     header='<tr><th>Port</th><th>Broadcast Rate (Kbit/sec)</th><th>Known Multicast Rate (Kbit/sec)</th><th>Unknown Multicast Rate (Kbit/sec)</th><th>Unknown Unicast Rate (Kbit/sec)</th></tr>'
-    html='<form method="post"><table>'+header+'<tr><td>Port 9</td><td>2500000</td><td>Off</td><td>Off</td><td>Off</td></tr></table></form><div><table>'+header+'<tr><td>Port 9</td><td>Off</td><td>Off</td><td>Off</td><td>Off</td></tr></table></div>'
+    html='<form method="post"><table>'+header+'<tr><td><select><option>Port 9</option></select></td><td><input name="bc_rate"></td><td>Off</td><td>Off</td><td>Off</td></tr></table></form><form method="post"><table>'+header+'<tr><td>Port 9</td><td>Off</td><td>Off</td><td>Off</td><td>Off</td></tr></table><input type="hidden" name="cmd" value="storm_dft"></form>'
     result=p.parse_storm_control(html)["ports"]["9"]
     assert result["broadcast_kbps"] is None
     assert result["known_multicast_kbps"] is None
