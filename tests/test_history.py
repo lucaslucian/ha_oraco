@@ -76,6 +76,9 @@ def test_reclassification_and_deduplicated_snapshots():
         await db.record_snapshot("vlan_ports",{"port_count":1})
         await db.record_snapshot("vlan_ports",{"port_count":2})
         assert len(await db.recent_changes())==2
+        day_views=await db.snapshot_history("vlan_ports")
+        assert len(day_views)==1 and day_views[0]["checks"]==3
+        assert day_views[0]["changes"]==2
 
     with TemporaryDirectory() as root:
         asyncio.run(scenario(root))
@@ -101,7 +104,7 @@ def test_30_day_buckets_daily_traffic_and_history_filters():
         assert (await db.traffic_summary())["peaks"]["ports"]["2"]["rx_bps"]==2500
         await db.record_snapshot("vlan_ports",{"ports":{"2":{"mode":"trunk"}}})
         snapshots=await db.snapshot_history("vlan_ports")
-        assert snapshots and snapshots[0]["data"]["ports"]["2"]["mode"]=="trunk"
+        assert snapshots and snapshots[0]["events"][0]["data"]["ports"]["2"]["mode"]=="trunk"
     with TemporaryDirectory() as root:
         asyncio.run(scenario(root))
 
