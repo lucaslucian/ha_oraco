@@ -1,147 +1,185 @@
 <div align="center">
 
-<img src="assets/banner.svg" alt="HoraInfo — Network monitoring for Home Assistant" width="100%">
+<img src="assets/banner.svg" alt="HoraInfo — monitoramento de switches no Home Assistant" width="100%">
 
 # HoraInfo
 
-[![Offline validation](https://github.com/lucaslucian/ha_oraco/actions/workflows/offline-tests.yml/badge.svg)](https://github.com/lucaslucian/ha_oraco/actions/workflows/offline-tests.yml)
-[![License: MIT](https://img.shields.io/github/license/lucaslucian/ha_oraco)](LICENSE)
-[![Latest commit](https://img.shields.io/github/last-commit/lucaslucian/ha_oraco)](https://github.com/lucaslucian/ha_oraco/commits/main)
+**Monitoramento local de switches Horaco/OEM gerenciáveis no Home Assistant**
 
-**Monitoramento de switches gerenciáveis para Home Assistant**
+[![Testes, HACS e Hassfest](https://github.com/lucaslucian/ha_oraco/actions/workflows/offline-tests.yml/badge.svg)](https://github.com/lucaslucian/ha_oraco/actions/workflows/offline-tests.yml)
+[![Licença MIT](https://img.shields.io/github/license/lucaslucian/ha_oraco)](LICENSE)
+[![Último commit](https://img.shields.io/github/last-commit/lucaslucian/ha_oraco)](https://github.com/lucaslucian/ha_oraco/commits/main)
 
 [![Adicionar ao HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=lucaslucian&repository=ha_oraco&category=integration)
 
 </div>
 
-Integração experimental **somente leitura** para monitorar switches Horaco e OEM com interface CGI Realtek no Home Assistant. A integração usa HACS e registra um painel na barra lateral, sem Docker ou Lovelace customizado.
+> [!IMPORTANT]
+> **Versão atual: 0.4.22 · Experimental · Somente leitura.**
+> A integração já está sendo utilizada com um switch real e coleta dados no Home Assistant. Isso **não equivale a homologação universal**: o firmware e o HTML CGI variam entre modelos. Consulte as [limitações](#limitações-conhecidas) antes de instalar.
 
-## Estado do desenvolvimento (0.4.22 — experimental)
+## O que é o HoraInfo?
 
-| Função | Implementação | Requer validação no switch |
-|---|---|---|
-| Portas, link, duplex, RX/TX e taxas | Sim | Sim |
-| Painel integrado, visual escuro/claro | Sim | Teste real no HA |
-| MAC table, múltiplas páginas e histórico | Sim | Sim |
-| Classificação MAC local/privado | Sim | Testável offline |
-| Fabricante OUI (IEEE MA-L/M/S) | Sim, cache local e atualização quando necessário | Teste de download no HA |
-| Topologia MAC por porta | Sim, modelo lógico | Sim |
-| SFP DDMI (RX, TX, temperatura e tensão) | Sim, parser do firmware de referência | Sim |
-| IGMP e DHCP Snooping | Sim | Sim |
-| Jumbo Frames | Sim | Sim |
-| VLAN por porta (Access/Trunk/Hybrid, Native, tagged/untagged) | Sim, leitura somente GET | Sim, depende do firmware | 
-| Port Isolation — listas por porta | Sim, somente leitura | Sentido exato da lista depende do firmware |
-| STP por porta — estado, role, path cost, P2P e Edge | Sim, somente leitura | Sim |
-| Storm Control — limites por porta | Sim, somente leitura | Sim |
-| PVID completo | Não | Exige identificação de endpoints adicionais |
-| Alertas sofisticados e limites ópticos | Não | Exigem limiares do módulo |
-| Mapa visual arrastável / LLDP | Não | LLDP depende de suporte real |
-| Configuração do switch | Não | Não está prevista nesta fase |
+O **HoraInfo** é uma integração personalizada para acompanhar switches Horaco e equipamentos OEM compatíveis com a interface HTTP/CGI utilizada por alguns switches gerenciáveis Realtek. Reúne dados de portas, tráfego, transceptor óptico, tabela MAC, VLANs e proteções em um **painel próprio na barra lateral**, além de disponibilizar **sensores e sensores binários nativos** do Home Assistant.
 
-O painel expõe visão geral, portas, **Histórico**, SFP+, dispositivos, VLANs, proteções, mapa lógico e sistema. O grafo MAC demonstra **aprendizado na porta**, não a conexão física direta. Não representa hosts atrás de NAT individualmente.
+A comunicação é local e a integração é destinada a **monitoramento**, não ao gerenciamento da configuração do switch. Não modifica VLANs, isolamento de portas, STP, firmware ou parâmetros administrativos.
+
+O nome apresentado é **HoraInfo**, mas o domínio interno da integração permanece `ha_oraco` para preservar a compatibilidade com instalações existentes. O endereço do repositório também permanece `lucaslucian/ha_oraco`.
+
+## Funcionalidades
+
+| Área | Recursos disponíveis |
+| --- | --- |
+| **Visão geral** | Portas ativas, taxas atuais RX/TX, picos observados, firmware e visão das interfaces |
+| **Portas** | Estado do link, velocidade negociada, duplex, contadores de bytes e pacotes, taxas RX/TX por interface |
+| **Histórico de tráfego** | Seleção do switch ou de uma porta; períodos de 1 h, 6 h, 12 h, 1, 3, 5, 7, 15 e 30 dias; gráfico de taxas e barras de volume diário |
+| **SFP+ / DDMI** | Presença, tipo, fabricante, part number, número de série, temperatura, tensão, corrente, potência óptica e outros dados, conforme o módulo e o firmware |
+| **Inventário MAC** | MACs aprendidos, porta, VLAN, classificação, fabricante quando disponível, primeira e última observação |
+| **Mapa de rede** | Nós individuais por MAC e associações observadas com portas, usando nome conhecido ou fabricante quando disponíveis |
+| **VLANs** | Informações de associação e modo das portas (access, trunk ou hybrid), VLAN nativa e listas tagged/untagged quando expostas pelo firmware |
+| **Proteções** | Consulta de isolamento, STP/RSTP global e por porta, Storm Control e agregação de portas |
+| **Outros diagnósticos** | IGMP, DHCP Snooping, Jumbo Frames, saúde das consultas HTTP e estado da base de fabricantes |
+| **Home Assistant** | Sensores e sensores binários nativos, descoberta de interfaces e painel acessível a administradores |
+
+O painel separa **estado atual** e **histórico**. As seções compatíveis possuem um visualizador de alterações em janela modal, organizado por dia, com verificações registradas e detalhes das mudanças.
+
+### Mapa e identificação dos dispositivos
+
+Cada endereço MAC observado na tabela de encaminhamento é representado individualmente. O HoraInfo pode apresentar o **nome conhecido** do registro, ou o **fabricante inferido pelo prefixo OUI**, ao lado do MAC.
+
+**Fabricante não é nome de host:** a base IEEE/OUI não revela automaticamente nomes como `Notebook`, `OpenWrt` ou `HomeAssistant`. Também não há descoberta física por LLDP implementada. O mapa indica **em qual porta o switch aprendeu cada MAC**, mas não comprova que o dispositivo está conectado diretamente à porta — outros switches ou equipamentos podem existir no caminho.
+
+### Sensores e classificação de MACs
+
+Há sensores de informações do equipamento, quantidade de portas ativas, métricas ópticas, dados por porta e contagens de MACs.
+
+Os sensores **MACs privados (atuais)** e **MACs privados (histórico)** representam endereços com o **bit de administração local** ativado. Um resultado igual a zero pode ser legítimo e não significa que não existam dispositivos na LAN. A contagem histórica utiliza o inventário persistido.
+
+### Proteção contra contadores anômalos
+
+As taxas RX/TX e os volumes acumulados são calculados a partir das diferenças entre contadores de bytes fornecidos pelo switch. O HoraInfo rejeita leituras inválidas, contadores reiniciados, possíveis rollovers, intervalos longos sem observação e variações incompatíveis com a capacidade da porta. RX e TX são avaliados separadamente.
+
+**Tráfego durante períodos sem observação não é reconstruído nem estimado.** Após uma interrupção, pode haver lacunas no volume contabilizado. O objetivo é impedir picos artificiais e somas incorretas.
 
 ## Instalação
 
-### Instalação pelo HACS
+### Pelo HACS
 
-Clique no botão **Adicionar ao HACS** acima para abrir este repositório no HACS da sua instância do Home Assistant. Caso ainda não esteja cadastrado, adicione-o como repositório personalizado na categoria **Integração**.
+Use **Adicionar ao HACS** no início desta página. Caso o redirecionamento não cadastre automaticamente o projeto:
 
-### Instalação manual
+1. Abra o **HACS** na sua instalação do Home Assistant.
+2. Adicione `https://github.com/lucaslucian/ha_oraco` como **repositório personalizado**, categoria **Integração**.
+3. Instale o **HoraInfo** e reinicie o Home Assistant.
+4. Abra **Configurações → Dispositivos e serviços → Adicionar integração → HoraInfo**.
+5. Informe **IP ou host, porta HTTP, usuário e senha** do switch.
+6. Abra **HoraInfo** na barra lateral.
 
-1. Baixe os arquivos deste repositório e copie a pasta `custom_components/ha_oraco` para `<config>/custom_components/ha_oraco` no Home Assistant, preservando os arquivos internos.
+O HoraInfo é disponibilizado como **repositório personalizado do HACS**; o botão não significa que esteja incluído no catálogo oficial do HACS.
+
+### Instalação manual (sem HACS)
+
+1. Copie a pasta `custom_components/ha_oraco` deste repositório para `<config>/custom_components/ha_oraco` no Home Assistant.
 2. Reinicie o Home Assistant.
-3. Acesse **Configurações → Dispositivos e serviços → Adicionar integração → HoraInfo**.
-4. Informe o endereço do switch, porta HTTP, usuário e senha.
-5. Abra **HoraInfo** na barra lateral. O painel de inventário requer uma conta administradora.
+3. Adicione a integração em **Configurações → Dispositivos e serviços**, como descrito acima.
 
-A instalação manual não recebe as atualizações automáticas do HACS.
+Mantenha a pasta **`ha_oraco`** mesmo que a interface mostre o nome HoraInfo. Na instalação manual, as atualizações devem ser aplicadas manualmente.
 
-## Atualização e coleta
+### Atualização de instalações existentes
 
-- Portas, tráfego: 30 segundos (ajustável no fluxo de opções).
-- Transceptores: 60 segundos.
-- Tabela MAC: 120 segundos.
-- DHCP/IGMP: 300 segundos.
-- VLAN por porta: 600 segundos, somente consulta da tabela de estado.
-- Isolamento, STP por porta e Storm Control: 600 segundos, somente GET.
-- Firmware, modelo, MAC e uptime: extraídos de `/info.cgi` (a mesma consulta de estado das portas). O endpoint `/fwug.cgi` não é consultado.
-- Jumbo frames: 3600 segundos.
-- Informações gerais publicadas: 3600 segundos. Como `/info.cgi` também fornece os estados das portas, ele é consultado a cada ciclo rápido.
-- IEEE OUI: arquivo em cache persistente e verificação de atualização após 30 dias, no início da integração.
+Atualize os arquivos pelo HACS ou pelo método manual utilizado, **reinicie o Home Assistant** e recarregue o navegador (`Ctrl + F5`) se o painel ainda mostrar a interface antiga. Mantenha um backup do diretório de configuração, especialmente do banco SQLite e do armazenamento local, antes de grandes atualizações.
 
-A integração descobre automaticamente as interfaces e os recursos disponíveis em cada equipamento compatível.
+## Coleta e armazenamento
 
-Os picos de tráfego RX/TX são calculados para o switch inteiro e por interface a partir das taxas observadas e armazenadas no SQLite. As amostras detalhadas são mantidas por 48 horas; médias e picos agregados a cada cinco minutos por até 30 dias. O usuário pode escolher períodos de 1, 6 ou 12 horas, 1, 3, 5, 7, 15 ou 30 dias. O volume acumulado de RX/TX é contabilizado por diferença positiva dos contadores de bytes reais em intervalos de cinco minutos, além de totais por dia, porta e switch. Amostras detalhadas e consolidados diários têm retenção máxima de 30 dias. O gráfico de barras mostra o volume diário RX/TX e o período selecionado mostra o volume acumulado. Reinícios da integração ou reset de contadores não geram volumes artificiais, embora possam deixar uma pequena lacuna. Os picos representam os últimos 30 dias. A visão geral e a aba Portas exibem somente o estado atual. A aba **Histórico** reúne gráficos de tráfego, volumes diários e seleção de interface e período em menus, até 30 dias. O gráfico usa o banco, inclusive após recarregar a página ou reiniciar a integração. Observações anteriores à instalação desta versão não podem ser recuperadas retroativamente. O inventário mantém em SQLite o fabricante atribuído, VLAN, porta, classificação e datas da primeira e da última observação de cada MAC. A atualização da base IEEE revalida os fabricantes históricos e atuais, inclusive registros antigos retidos no SQLite. Caso os endpoints IEEE sejam bloqueados pela rede ou proteção antibot, a integração tenta um espelho público dos prefixos MA-L, sem presumir suporte adicional a MA-M e MA-S nesse espelho. Os três arquivos IEEE são verificados separadamente; falhas preservam os prefixos já conhecidos e uma nova tentativa é agendada diariamente quando a atualização estiver pendente. A aba Sistema mostra a quantidade de prefixos, a data da última atualização e o status de cada origem. Leituras de SFP, VLAN, STP, isolamento, Storm Control e agregação recebem um resumo diário da data e quantidade de verificações, durante 90 dias. Somente alterações criam snapshots detalhados, evitando duplicação dos dados a cada coleta. Para evitar crescimento excessivo, os snapshots SFP são limitados a um registro a cada cinco minutos. A aba Sistema apresenta os eventos recentes detectados. Cada aba compatível tem um botão de histórico por dia, inclusive para indicar ausência de alterações. O armazenamento anterior do inventário MAC em Home Assistant Store é usado para migração, sem apagar dados históricos.
+O HoraInfo utiliza consultas HTTP periódicas. Os intervalos abaixo são os atualmente definidos no código; a coleta rápida pode ser ajustada nas opções da integração.
 
-O mapa da rede representa cada MAC observado como um nó individual conectado à respectiva porta por vínculo lógico. O mapa exibe conexões lógicas MAC–porta (sem afirmar que os dispositivos estão diretamente ligados ao switch).
+| Dados | Intervalo padrão |
+| --- | --- |
+| Informações de portas e contadores de tráfego | 30 s |
+| SFP+ / transceptor | 60 s |
+| Tabela MAC | 120 s |
+| DHCP Snooping e IGMP | 5 min |
+| VLANs, isolamento, STP, Storm Control e agregação | 10 min |
+| Jumbo Frames | 60 min |
+| Metadados estáticos do dispositivo | Publicação aproximadamente a cada 60 min; `/info.cgi` é consultado também no ciclo rápido |
 
-## Privacidade e segurança
+As principais páginas utilizadas incluem `/info.cgi`, `/port.cgi?page=stats`, `/transceiver.cgi` e `/mac.cgi?page=fwd_tbl`, além dos endpoints específicos de VLANs e proteções.
 
-- Nenhum endpoint de alteração de VLAN, reset, atualização, reboot ou controle administrativo.
-- A página `/fwug.cgi` não é mais consultada. A versão é lida de `/info.cgi`, sem acesso ao endpoint de atualização do firmware.
-- O cliente usa GET nas rotas de monitoramento aprovadas. POST ocorre somente em login e paginação de leitura da tabela MAC.
-- Painel e WebSocket restritos a administradores.
-- O inventário MAC (cache Store limitado a 2.000 identidades por switch e histórico ampliado no SQLite) é armazenado localmente no Home Assistant; não é enviado à IEEE. O download de registros IEEE é separado das consultas MAC. O arquivo SQLite é criado em `.storage/ha_oraco_history.db` e deve ser incluído nos backups para preservar o histórico.
-- MAC com bit local é rotulado **MAC local/privado**, não necessariamente aleatorizado.
-- O diagnóstico exportável omite credenciais e endereços MAC. O equipamento pode usar HTTP sem TLS; utilize somente em rede confiável.
-- A recuperação da sessão depende do firmware. Não exponha a interface de administração do switch à internet.
+A integração **reutiliza a sessão autenticada** enquanto válida e tenta recuperar sessões expiradas. POST é usado no login e na paginação de leitura da tabela MAC, sem comandos de configuração.
 
-## Testes sem hardware
+### Retenção e histórico SQLite
+
+O banco fica em `<config>/.storage/ha_oraco_history.db`. É um banco **SQLite local**; não requer servidor externo.
+
+| Tipo de registro | Política implementada |
+| --- | --- |
+| Amostras detalhadas de tráfego | Aproximadamente 48 horas |
+| Médias e picos de tráfego em blocos de 5 minutos | 30 dias |
+| Volumes RX/TX consolidados por dia e por interface | 30 dias |
+| Resumos diários de verificações e snapshots de alterações | 90 dias |
+| Inventário MAC: primeira/última observação, porta, VLAN e fabricante | Histórico persistente; sem retenção temporal automática definida no código |
+
+O histórico de tráfego permite selecionar **1, 6 ou 12 horas; 1, 3, 5, 7, 15 ou 30 dias**. Volumes são derivados de **diferenças válidas dos contadores**, não da simples soma de velocidades instantâneas.
+
+Os snapshots de VLANs, transceptores e proteções são gravados quando há alteração de dados, enquanto os resumos diários registram a última análise e a quantidade de verificações. A consulta é apresentada por dia em **janela modal**. As leituras ópticas têm limitação adicional para evitar excesso de snapshots.
+
+Os dados antigos armazenados antes da instalação da funcionalidade de histórico não podem ser reconstruídos retroativamente. O HoraInfo possui procedimentos de migração do histórico compatível já existente.
+
+### Fabricantes OUI
+
+A integração tenta atualizar arquivos IEEE **MA-L, MA-M e MA-S**, mantém cache local e reclassifica identidades conhecidas quando novos prefixos são obtidos. Caso as fontes IEEE não respondam, há uma tentativa alternativa por espelho público de dados OUI, cuja cobertura pode ser menor.
+
+A seção **Sistema → Base IEEE de fabricantes** permite verificar quantidade de prefixos disponíveis, última atualização e eventuais falhas. Um MAC pode continuar sem fabricante por indisponibilidade da base, ausência de correspondência ou por ser um endereço administrado localmente.
+
+## Compatibilidade e limitações conhecidas
+
+- **Experimental:** o projeto é utilizado com um switch real, mas não foi homologado em todos os equipamentos Horaco/OEM nem nas diferentes versões de firmware.
+- **HTML CGI variável:** algumas páginas apresentam marcação HTML incorreta. Os parsers incluem tratamento para formatos já observados, mas outras variantes podem exigir ajustes.
+- **Somente leitura:** não inclui ações de reboot, reset, atualização de firmware, mudança de VLAN, isolamento, STP ou outros parâmetros.
+- **SFP+:** disponibilidade e precisão dos dados dependem do firmware, do módulo e da resposta da página óptica. Ausência de potência óptica **não implica necessariamente ausência física do módulo**.
+- **Topologia:** não descobre automaticamente enlaces físicos ou nomes de host por LLDP, DHCP ou mDNS. Exibe evidências provenientes da tabela MAC.
+- **VLANs:** não garante a descoberta de todas as configurações de PVID e recursos avançados do switch.
+- **Alertas:** limites ópticos e alertas avançados ainda não estão implementados.
+- **Ícones:** apesar de haver arquivos locais de marca em `custom_components/ha_oraco/brand/`, algumas telas do HACS ou a entidade de atualização podem exibir *Icon not available*; isso depende do mecanismo de resolução de ícones dessas interfaces.
+- **Histórico:** em falhas de coleta ou reinicializações de contadores, pode haver intervalos não contabilizados; a integração não inventa valores para preencher essas lacunas.
+
+Para investigar leituras ausentes, utilize **HoraInfo → Sistema → Saúde das consultas**. Ali é possível distinguir falhas HTTP, erros de interpretação do HTML e problemas de gravação do histórico.
+
+## Segurança e privacidade
+
+- Monitora o switch na rede local, sem expor endpoints de administração publicamente.
+- O gerenciamento web desses equipamentos pode utilizar **HTTP sem TLS**; mantenha o switch em rede de administração confiável.
+- Credenciais permanecem na configuração da integração do Home Assistant; o SQLite do HoraInfo **não armazena a senha do switch**.
+- Os dados de MAC e histórico ficam na instalação local do Home Assistant. A consulta de fabricantes baixa **bases OUI**, sem enviar o inventário MAC individual à IEEE.
+- O painel e os comandos WebSocket do dashboard/histórico exigem **usuário administrador**.
+- Inclua `.storage/ha_oraco_history.db` e os dados pertinentes de `.storage/` nos backups do Home Assistant.
+
+## Desenvolvimento e testes
+
+O repositório possui testes automatizados de parsers, páginas CGI reais e malformadas, sessão HTTP, contadores de tráfego, SQLite, inventário e componentes do painel. O fluxo [Offline validation](https://github.com/lucaslucian/ha_oraco/actions/workflows/offline-tests.yml) executa **pytest, validação JavaScript/JSON, Hassfest e verificação HACS**. O indicador no topo reflete o resultado publicado pelo GitHub Actions; uma execução bem-sucedida não substitui os testes no hardware real.
+
+Para executar localmente:
 
 ```bash
-python -m pip install beautifulsoup4 pytest
-python -m compileall -q custom_components/ha_oraco
+python -m pip install beautifulsoup4 aiohttp pytest
+python -m compileall -q custom_components/ha_oraco devtools tests
 python -m pytest -q tests/
 node --check custom_components/ha_oraco/frontend/ha-oraco-panel.js
 ```
 
-Simulador local:
+O simulador de desenvolvimento pode ser iniciado com:
 
 ```bash
 python devtools/mock_switch.py --ports 10 --port 8089
 ```
 
-O simulador atende `127.0.0.1:8089` com HTML de referência e não modifica equipamentos. Para conectar a partir do HA em contêiner será necessário configurar um host acessível **somente na rede de testes**. O simulador é de desenvolvimento; não replica todas as peculiaridades dos firmwares.
+O simulador escuta localmente e **não reproduz integralmente** o comportamento dos firmwares reais.
 
-## Referências e créditos
+Para bugs e sugestões, utilize as [issues do GitHub](https://github.com/lucaslucian/ha_oraco/issues). Ao relatar problemas, informe a versão da integração, o modelo e o firmware do switch e os diagnósticos do painel, **sem compartilhar senhas ou cookies de autenticação**.
 
-Inspirado em [switch-dashboard](https://github.com/byte4geek/switch-dashboard) e [horaco_switch_ha](https://github.com/gtrancillo/horaco_switch_ha). Código desenvolvido com assistência de IA.
+## Licença e créditos
 
-**Atenção:** código disponibilizado para testes, sem homologação num Horaco real. Os parsers e o painel precisam de validação no Home Assistant antes de considerar o projeto estável.
+Distribuído sob a [licença MIT](LICENSE).
 
+Inspirado em [switch-dashboard](https://github.com/byte4geek/switch-dashboard) e [horaco_switch_ha](https://github.com/gtrancillo/horaco_switch_ha).
 
-### Diagnóstico de dados ausentes
-
-Se a página SFP+ não responder, o HoraInfo informa **diagnóstico indisponível**, e não módulo fisicamente ausente. A aba Sistema mostra o erro do endpoint SFP+, permitindo diferenciar problemas de parser, autenticação e rede. O painel é versionado para evitar o uso de JavaScript anterior no cache do navegador.
-
-
-### Identidade visual e ícones
-
-A integração fornece `brand/icon.png`, `brand/icon@2x.png`, `brand/logo.png` e `brand/logo@2x.png`, inclusive variações para tema escuro. São gerados a partir dos SVGs em `assets/` e utilizados localmente pelo Home Assistant 2026.3 ou posterior. O HACS pode continuar exibindo o placeholder **Icon not available** na lista de downloads ou na entidade de atualização devido à implementação atual de sua interface, que pode consultar o CDN antigo em vez dos ícones locais. Isso não indica ausência dos arquivos no HoraInfo. Após instalar uma nova versão pelo HACS, reinicie o Home Assistant para atualizar os recursos de marca.
-
-
-### Integridade do histórico (0.4.16)
-
-A migração de amostras antigas para intervalos de cinco minutos é executada uma única vez por arquivo SQLite, sem reimportar linhas em cada reinício. Os últimos contadores de bytes são preservados de forma temporária entre reinícios rápidos da integração (até três minutos) para evitar lacunas desnecessárias. Se o equipamento ficar indisponível por mais tempo ou reiniciar os próprios contadores, um novo ponto de referência é estabelecido sem inventar consumo durante a ausência. As atualizações do histórico MAC preservam as datas já conhecidas quando novas observações não as apresentam. Falhas na escrita do histórico ou reclassificação de fabricantes são isoladas do fluxo de monitoramento, e o diagnóstico indica o problema em vez de reportar falsamente a consulta como indisponível.
-
-A partir da 0.4.17, a paginação da tabela MAC também renova uma sessão HTTP expirada uma única vez, e a falha ao salvar o cache legado não é interpretada como falha de coleta. Em caso de indisponibilidade do banco, o HoraInfo mantém o monitoramento e registra o erro para diagnóstico.
-
-
-### Proteção de contadores de tráfego (0.4.19)
-
-As amostras RX/TX são aceitas somente quando os contadores de bytes são válidos (inteiros de 64 bits), o tempo entre coletas é positivo e não ultrapassa 120 segundos e a diferença cabe na velocidade física negociada da porta (com margem de 25%). Saltos acima do limite, contadores zerados/reiniciados, possível rollover ou falhas de coleta não geram picos nem volume fictício: um novo valor de referência é estabelecido para a próxima amostra. RX e TX são validados separadamente, para que um problema em uma direção não invalide a outra. O banco SQLite aplica independentemente a mesma regra e mantém a última referência mesmo quando a primeira coleta ainda não permite calcular uma velocidade. Os contadores de eventos rejeitados ficam em `diagnostics.traffic_counters` para diagnóstico. Não é possível recuperar com exatidão o volume entre leituras interrompidas ou contadores reiniciados, e essas lacunas não são estimadas.
-
-
-### Correções de compatibilidade OEM (0.4.20)
-
-Algumas revisões do firmware fecham etiquetas `<th>` usando `</td>` e apresentam a primeira linha do transceptor sem `<tr>` inicial. Os parsers de `/info.cgi` e `/transceiver.cgi` agora extraem os pares de campos do HTML original com tolerância a esse formato, preservando modelo, firmware, uptime, MAC e informações do módulo óptico. O subtítulo do equipamento foi movido para abaixo do nome HoraInfo no cabeçalho. A suíte automatizada inclui casos de regressão baseados nessas respostas reais.
-
-
-### Histórico em modal e MACs locais (0.4.21)
-
-Os registros das configurações e proteções agora são abertos em janela modal com navegação por dia, sem árvores de JSON deslocadas no painel. Em histórico migrado, a contagem exibida de alterações considera também eventos realmente presentes no banco. O sensor **MACs privados (atuais)** conta endereços MAC com bit de administração local entre as observações atuais; **MACs privados (histórico)** conta esses endereços retidos no SQLite. Valores zero são legítimos quando os dispositivos observados usam MACs universalmente administrados.
-
-
-### Identificação no mapa (0.4.22)
-
-O mapa associa os MACs observados aos fabricantes armazenados no histórico SQLite e à base OUI atualmente carregada, mesmo quando o registro em memória da coleta ainda está desatualizado. Quando existe nome de dispositivo, ele tem prioridade. Caso contrário, o mapa apresenta o fabricante conhecido junto do endereço MAC; se o fabricante não estiver identificado, mostra somente o MAC. Uma consulta OUI informa fabricante, **não o nome de host do dispositivo**: nomes de host dependem de fonte adicional como DHCP/mDNS ou identificação manual.
+<sub>Partes do desenvolvimento e da documentação tiveram assistência de inteligência artificial. As funcionalidades e os limites de compatibilidade devem ser verificados em cada ambiente.</sub>
