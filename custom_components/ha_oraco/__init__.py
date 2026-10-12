@@ -16,6 +16,7 @@ from .inventory import MacInventory
 from .vendors import VendorCache
 from .advanced import parse_sfp, parse_dhcp, parse_igmp, parse_jumbo
 from .topology import build_topology
+from .vlans import parse_port_vlans
 from .panel import register_panel
 
 _LOGGER = logging.getLogger(__name__)
@@ -72,6 +73,7 @@ class HoracoCoordinator(DataUpdateCoordinator[dict]):
                 ("dhcp", 300, "/dhcp_snooping.cgi?page=dump", parse_dhcp),
                 ("igmp", 300, "/igmp.cgi?page=dump", parse_igmp),
                 ("jumbo", 3600, "/fwd.cgi?page=jumboframe", parse_jumbo),
+                ("vlan_ports", INTERVALS["vlans"], "/vlan.cgi?page=port_based", parse_port_vlans),
             )
             for name, interval, path, parser in plans:
                 if name not in self.last or now - self.last[name] >= interval:
