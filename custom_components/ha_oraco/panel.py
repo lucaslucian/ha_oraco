@@ -40,6 +40,30 @@ async def dashboard_data(hass, connection, msg):
         })
     connection.send_result(msg["id"], {"switches": switches})
 
+@websocket_api.websocket_command({
+    vol.Required("type"): "ha_oraco/history",
+    vol.Required("entry_id"): str,
+    vol.Required("mode"): vol.In(["traffic","daily","snapshots"]),
+    vol.Optional("port", default="__total__"): str,
+    vol.Optional("hours", default=24): vol.All(vol.Coerce(int),vol.Range(min=1,max=720)),
+    vol.Optional("kind", default="sfp"): str,
+})
+@websocket_api.require_admin
+@websocket_api.async_response
+async def history_data(hass, connection, msg):
+    coordinator=hass.data.get(DOMAIN,{}).get(msg["entry_id"])
+    if not hasattr(coordinator,"client") or coordinator.history_db is None:
+        connection.send_error(msg["id"],"not_found","History database unavailable")
+        return
+    database=coordinator.history_db
+    if msg["mode"]=="traffic":
+        result=await database.series(msg["port"],msg["hours"])
+    elif msg["mode"]=="daily":
+        result=await database.daily_totals(msg["port"])
+    else:
+        result=await database.snapshot_history(msg["kind"])
+    connection.send_result(msg["id"],{"items":result})
+
 async def register_panel(hass):
     """Serve frontend file and register one native-looking custom sidebar panel."""
     if hass.data.setdefault(DOMAIN, {}).get("_panel_registered"):
@@ -50,6 +74,7 @@ async def register_panel(hass):
          StaticPathConfig("/ha_oraco_static/brand/icon.svg", str(static_file.parent / "brand" / "icon.svg"), False)]
     )
     websocket_api.async_register_command(hass, dashboard_data)
+    websocket_api.async_register_command(hass, history_data)
     frontend.async_register_built_in_panel(
         hass, "custom",
         sidebar_title="HoraInfo",
