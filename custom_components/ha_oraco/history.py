@@ -80,6 +80,12 @@ class HistoryDatabase:
                 PRIMARY KEY (switch_id,kind,timestamp)
             )""")
             db.execute("CREATE INDEX IF NOT EXISTS idx_snapshots_expiry ON snapshots(timestamp)")
+            db.execute("""CREATE TABLE IF NOT EXISTS snapshot_daily (
+                switch_id TEXT, kind TEXT, day TEXT, checked_at TEXT,
+                checksum TEXT, checks INTEGER, changes INTEGER,
+                PRIMARY KEY(switch_id,kind,day)
+            )""")
+
             db.execute("""CREATE INDEX IF NOT EXISTS idx_mac_seen
                 ON mac_inventory(switch_id,last_seen)""")
 
@@ -228,23 +234,36 @@ class HistoryDatabase:
         return await self.hass.async_add_executor_job(self._inventory_summary)
 
     def _record_snapshot(self, kind, payload):
-        allowed = ("sfp", "vlan_ports", "isolation", "stp_ports", "storm_control",
-                   "stp_global", "aggregation")
+        allowed=("sfp","vlan_ports","isolation","stp_ports","storm_control","stp_global","aggregation")
         if kind not in allowed:
             return
-        encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
-        digest = hashlib.sha256(encoded.encode("utf-8")).hexdigest()
-        stamp = datetime.now(timezone.utc).isoformat()
-        cutoff = (datetime.now(timezone.utc)-timedelta(days=90)).isoformat()
+        encoded=json.dumps(payload,ensure_ascii=False,sort_keys=True,default=str)
+        digest=hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+        now=datetime.now(timezone.utc)
+        stamp=now.isoformat()
+        day=now.astimezone(self.tz).date().isoformat()
+        cutoff=(now-timedelta(days=90)).isoformat()
+        day_cutoff=(now.astimezone(self.tz)-timedelta(days=90)).date().isoformat()
         with self._connect() as db:
-            latest = db.execute("SELECT checksum,timestamp FROM snapshots WHERE switch_id=? AND kind=? ORDER BY timestamp DESC LIMIT 1", (self.key,kind)).fetchone()
-            if kind == "sfp" and latest:
-                last_time = datetime.fromisoformat(latest[1])
-                if datetime.now(timezone.utc) - last_time < timedelta(minutes=5):
-                    return
-            if latest is None or latest[0] != digest:
-                db.execute("INSERT INTO snapshots (switch_id,kind,timestamp,checksum,payload) VALUES (?,?,?,?,?)", (self.key,kind,stamp,digest,encoded))
-            db.execute("DELETE FROM snapshots WHERE timestamp < ?", (cutoff,))
+            previous=db.execute("""SELECT checksum,timestamp FROM snapshots
+                WHERE switch_id=? AND kind=? ORDER BY timestamp DESC LIMIT 1""",
+                (self.key,kind)).fetchone()
+            changed=previous is None or previous[0]!=digest
+            if kind=="sfp" and previous and now-datetime.fromisoformat(previous[1])<timedelta(minutes=5):
+                changed=False
+            if changed:
+                db.execute("""INSERT INTO snapshots
+                    (switch_id,kind,timestamp,checksum,payload) VALUES (?,?,?,?,?)""",
+                    (self.key,kind,stamp,digest,encoded))
+            db.execute("""INSERT INTO snapshot_daily
+                (switch_id,kind,day,checked_at,checksum,checks,changes)
+                VALUES (?,?,?,?,?,1,?)
+                ON CONFLICT(switch_id,kind,day) DO UPDATE SET
+                    checked_at=excluded.checked_at,checksum=excluded.checksum,
+                    checks=checks+1,changes=changes+excluded.changes""",
+                (self.key,kind,day,stamp,digest,int(changed)))
+            db.execute("DELETE FROM snapshots WHERE timestamp < ?",(cutoff,))
+            db.execute("DELETE FROM snapshot_daily WHERE day < ?",(day_cutoff,))
 
     async def record_snapshot(self, kind, payload):
         await self.hass.async_add_executor_job(self._record_snapshot,kind,payload)
@@ -339,15 +358,26 @@ class HistoryDatabase:
         return await self.hass.async_add_executor_job(self._daily_totals,str(port),int(days))
 
     def _snapshot_history(self,kind):
-        valid=("sfp","vlan_ports","isolation","stp_ports","storm_control","stp_global","aggregation")
-        if kind not in valid:
+        allowed=("sfp","vlan_ports","isolation","stp_ports","storm_control","stp_global","aggregation")
+        if kind not in allowed:
             return []
-        cutoff=(datetime.now(timezone.utc)-timedelta(days=90)).isoformat()
+        cutoff=(datetime.now(self.tz)-timedelta(days=90)).date().isoformat()
         with self._connect() as db:
-            rows=db.execute("""SELECT timestamp,payload FROM snapshots
-                WHERE switch_id=? AND kind=? AND timestamp>=?
-                ORDER BY timestamp DESC LIMIT 120""",(self.key,kind,cutoff)).fetchall()
-        return [{"timestamp":timestamp,"data":json.loads(payload)} for timestamp,payload in rows]
+            days=db.execute("""SELECT day,checked_at,checks,changes FROM snapshot_daily
+                WHERE switch_id=? AND kind=? AND day>=?
+                ORDER BY day DESC LIMIT 90""",(self.key,kind,cutoff)).fetchall()
+            events=db.execute("""SELECT timestamp,payload FROM snapshots
+                WHERE switch_id=? AND kind=? ORDER BY timestamp DESC LIMIT 180""",
+                (self.key,kind)).fetchall()
+        by_day={}
+        for timestamp,payload in events:
+            try:
+                day=datetime.fromisoformat(timestamp).astimezone(self.tz).date().isoformat()
+                by_day.setdefault(day,[]).append({"timestamp":timestamp,"data":json.loads(payload)})
+            except (ValueError,TypeError):
+                continue
+        return [{"day":day,"checked_at":last,"checks":checks,"changes":changes,
+                 "events":by_day.get(day,[])} for day,last,checks,changes in days]
 
     async def snapshot_history(self,kind):
         return await self.hass.async_add_executor_job(self._snapshot_history,kind)
