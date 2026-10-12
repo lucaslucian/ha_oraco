@@ -211,7 +211,23 @@ class HaOracoPanel extends HTMLElement {
           +(storm.length?tbl(['Porta','Broadcast','Multicast conhecido','Multicast desconhecido','Unicast desconhecido'],storm.map(p=>
             '<tr><td>Porta '+this.escape(p.port)+'</td><td>'+stormValue(p.broadcast_kbps)+'</td><td>'+stormValue(p.known_multicast_kbps)+'</td><td>'+stormValue(p.unknown_multicast_kbps)+'</td><td>'+stormValue(p.unknown_unicast_kbps)+'</td></tr>')):'')+'</section>';
       }
-      else if(this.tab === "system") body += '<section class="card"><h3>Informações do equipamento</h3>'+Object.entries(sw.device||{}).map(([k,v])=>'<div class="kv"><span>'+this.escape(k)+'</span><b>'+this.escape(v)+'</b></div>').join("")+'<h3>Saúde dos endpoints</h3>'+Object.entries(sw.diagnostics?.endpoints||{}).map(([k,v])=>'<div class="kv"><span>'+this.escape(k)+'</span><b>'+this.escape(v.status)+'</b></div>').join("")+'</section>';
+      else if(this.tab === "system") {
+        const oui=sw.oui||{};
+        const sources=Object.entries(oui.sources||{});
+        const time=value=>{if(!value)return '—';const d=new Date(value);return Number.isFinite(d.getTime())?d.toLocaleString('pt-BR'):this.escape(value);};
+        body+='<section class="card"><h3>Informações do equipamento</h3>'+Object.entries(sw.device||{}).map(([k,v])=>'<div class="kv"><span>'+this.escape(k)+'</span><b>'+this.escape(v)+'</b></div>').join("")+'</section>';
+        body+='<section class="card"><h3>Base IEEE de fabricantes</h3><div class="inventory-stats">'
+          +'<div><small>Prefixos carregados</small><strong>'+this.escape(Number(oui.prefix_count||0).toLocaleString("pt-BR"))+'</strong></div>'
+          +'<div><small>Última atualização</small><strong class="system-date">'+time(oui.last_updated)+'</strong></div>'
+          +'<div><small>Última tentativa</small><strong class="system-date">'+time(oui.last_attempt)+'</strong></div></div>'
+          +(sources.length?sources.map(([name,detail])=>'<div class="kv"><span>'+this.escape(name)+'</span><b>'+this.escape(detail.status)+(detail.count!==undefined?' · '+this.escape(detail.count)+' registros':'')+(detail.error?' · '+this.escape(detail.error):'')+'</b></div>').join(""):'<p class="section-subtitle">Ainda não há detalhes da tentativa nesta sessão. A base carregada anteriormente continua disponível.</p>')
+          +'</section>';
+        const changes=sw.recent_changes||[];
+        const labels={sfp:"SFP+",vlan_ports:"VLANs",isolation:"Isolamento",stp_ports:"STP por porta",storm_control:"Storm Control",stp_global:"STP global",aggregation:"Agregação"};
+        body+='<section class="card"><h3>Histórico de mudanças detectadas</h3><p class="section-subtitle">Snapshots reais no banco, com retenção de 90 dias. Valores repetidos não criam novos eventos.</p>'
+          +(changes.length?'<div class="event-list">'+changes.slice(0,20).map(ev=>'<div class="event-item"><span class="event-dot"></span><span>'+this.escape(labels[ev.kind]||ev.kind)+'</span><time>'+time(ev.timestamp)+'</time></div>').join("")+'</div>':'<p class="empty">Ainda não há snapshots registrados.</p>')+'</section>';
+        body+='<section class="card"><h3>Saúde das consultas</h3>'+Object.entries(sw.diagnostics?.endpoints||{}).map(([k,v])=>'<div class="kv"><span>'+this.escape(k)+'</span><b>'+this.escape(v.status)+'</b></div>').join("")+'</section>';
+      }
       else if(this.tab === "vlan") {
         const vlans=sw.network?.vlan_ports?.ports||{};
         const vlanRows=Object.values(vlans).sort((a,b)=>Number(a.port)-Number(b.port));
@@ -247,6 +263,7 @@ class HaOracoPanel extends HTMLElement {
       .port-selector{display:flex;gap:7px;flex-wrap:wrap;margin:16px 0 20px}
       .port-select{padding:8px 13px;border:1px solid var(--divider-color);border-radius:9px;background:var(--secondary-background-color);font-size:12px;color:var(--primary-text-color)}
       .port-select.selected{border-color:var(--primary-color);background:color-mix(in srgb,var(--primary-color) 13%,var(--card-background-color));color:var(--primary-color)}
+      .event-list{display:grid;gap:8px}.event-item{display:flex;align-items:center;gap:12px;padding:12px 14px;background:var(--secondary-background-color);border:1px solid var(--divider-color);border-radius:9px;font-size:12px}.event-item time{margin-left:auto;color:var(--secondary-text-color);font-variant-numeric:tabular-nums}.event-dot{width:9px;height:9px;border-radius:50%;background:var(--primary-color);flex-shrink:0}.system-date{font-size:14px!important}
       .inventory-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:22px}.inventory-stats>div{background:var(--secondary-background-color);border-radius:12px;padding:17px}.inventory-stats small{display:block;color:var(--secondary-text-color);font-size:12px;margin-bottom:10px}.inventory-stats strong{display:block;font-size:20px;overflow-wrap:anywhere}
       .peak-strip{display:flex;flex-wrap:wrap;gap:20px;align-items:center;padding:13px 18px;margin:-2px 0 15px;background:var(--card-background-color);border:1px solid var(--divider-color);border-radius:12px;font-size:12px}.peak-strip span{color:var(--secondary-text-color)}.peak-strip strong{font-size:13px}
       .topology-scroll{overflow:auto;max-height:700px;border-radius:12px;background:#0b1a29;padding:10px}.topology-svg{display:block;width:100%;min-width:800px;height:auto;max-height:none}.topology-disclaimer{font-size:12px;color:var(--secondary-text-color)}
