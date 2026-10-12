@@ -9,6 +9,9 @@ class HaOracoPanel extends HTMLElement {
     this.busy = false;
     this.samples = {};
     this.selectedPort = {};
+    this.chartHours = {};
+    this.historyViews = {};
+    this.historyPanels = {};
   }
   set hass(value) {
     this._hass = value;
@@ -76,11 +79,54 @@ class HaOracoPanel extends HTMLElement {
       +'</div><div class="face-legend"><span>● Verde: conectada</span><span>● Cinza: desconectada</span>'
       +'<span>Representação lógica; disposição física depende do modelo</span></div></div>';
   }
+  async fetchHistory(switchId,mode,port="__total__",hours=24,kind="sfp") {
+    const key=switchId+"|"+mode+"|"+port+"|"+hours+"|"+kind;
+    this.historyViews[key]={loading:true};
+    this.render();
+    try {
+      const result=await this._hass.connection.sendMessagePromise({
+        type:"ha_oraco/history",entry_id:switchId,mode,port,hours,kind
+      });
+      this.historyViews[key]={items:result.items||[],loading:false};
+    } catch(error) {
+      this.historyViews[key]={loading:false,error:String(error),items:[]};
+    }
+    this.render();
+  }
+  ranges(switchId,port="__total__") {
+    const chosen=this.chartHours[switchId+"|"+port]||24;
+    const options=[[1,"1 hora"],[6,"6 horas"],[12,"12 horas"],[24,"1 dia"],
+      [72,"3 dias"],[120,"5 dias"],[168,"7 dias"],[360,"15 dias"],[720,"30 dias"]];
+    return '<div class="range-list">'+options.map(([hours,label])=>
+      '<button data-chart-hours="'+hours+'" data-switch="'+this.escape(switchId)+'" data-port="'+this.escape(port)+'" class="range '+(hours===chosen?'chosen':'')+'">'+label+'</button>').join('')+'</div>';
+  }
+  dailyTable(switchId,port="__total__") {
+    const key=switchId+"|daily|"+port+"|24|sfp";
+    const result=this.historyViews[key];
+    if(!result) return '<button class="history-action" data-daily-switch="'+this.escape(switchId)+'" data-daily-port="'+this.escape(port)+'">Ver volume diário RX/TX (até 365 dias)</button>';
+    if(result.loading) return '<p class="muted">Consultando totais diários…</p>';
+    if(result.error) return '<p class="muted">'+this.escape(result.error)+'</p>';
+    const readable=v=>Number(v)>=1e12?(Number(v)/1e12).toFixed(2)+" TB":Number(v)>=1e9?(Number(v)/1e9).toFixed(2)+" GB":Number(v)>=1e6?(Number(v)/1e6).toFixed(2)+" MB":Number(v).toLocaleString("pt-BR")+" B";
+    return '<div class="scroll"><table><thead><tr><th>Dia</th><th>Recebido (RX)</th><th>Enviado (TX)</th></tr></thead><tbody>'+
+      result.items.slice(0,365).map(r=>'<tr><td>'+this.escape(r.day)+'</td><td>'+readable(r.rx_bytes)+'</td><td>'+readable(r.tx_bytes)+'</td></tr>').join('')+'</tbody></table></div>';
+  }
+  snapshots(switchId,kind,label) {
+    const key=switchId+"|snapshots|__total__|24|"+kind;
+    const result=this.historyViews[key];
+    if(!result) return '<button class="history-action" data-snapshot-switch="'+this.escape(switchId)+'" data-snapshot-kind="'+kind+'">Histórico · '+this.escape(label)+' (90 dias)</button>';
+    if(result.loading) return '<p class="muted">Carregando histórico…</p>';
+    if(result.error) return '<p class="muted">'+this.escape(result.error)+'</p>';
+    return '<div class="snapshot-list"><h4>Histórico de '+this.escape(label)+'</h4>'+
+      (result.items.length?result.items.map(r=>'<details><summary>'+new Date(r.timestamp).toLocaleString("pt-BR")+'</summary><pre>'+this.escape(JSON.stringify(r.data,null,2))+'</pre></details>').join(''):'<p class="muted">Nenhum registro no período.</p>')+'</div>';
+  }
   trafficChart(id, port=null) {
     const sw=(this.data?.switches||[]).find(x=>x.id===id);
-    const persisted=(port ? (sw?.traffic_by_port?.[port]||[]) : (sw?.traffic_history||[])).map(v=>({rx:Number(v.rx)||0,tx:Number(v.tx)||0}));
+    const hours=this.chartHours[id+"|"+(port||"__total__")]||24;
+    const key=id+"|traffic|"+(port||"__total__")+"|"+hours+"|sfp";
+    const query=this.historyViews[key];
+    const persisted=(query?.items||(port ? (sw?.traffic_by_port?.[port]||[]) : (sw?.traffic_history||[]))).map(v=>({rx:Number(v.rx)||0,tx:Number(v.tx)||0}));
     const samples=persisted.length?persisted:(port?[]:(this.samples[id]||[]));
-    if(samples.length<2)return '<p class="empty">Aguardando amostras para formar o gráfico. As medições ficam salvas no banco.</p>';
+    if(samples.length<2)return '<p class="empty">Aguardando duas amostras. Os dados são armazenados continuamente.</p>';
     const peak=Math.max(1,...samples.flatMap(v=>[v.rx,v.tx]));
     const points=key=>samples.map((v,i)=>((i*740)/Math.max(1,samples.length-1)+30).toFixed(1)
       +','+(159-v[key]/peak*134).toFixed(1)).join(' ');
@@ -148,7 +194,7 @@ class HaOracoPanel extends HTMLElement {
       if (this.tab === "overview") {
         body += '<div class="stats"><section class="card metric"><small>Portas ativas</small><strong>'+online+' / '+ps.length+'</strong></section><section class="card metric"><small>Tráfego RX</small><strong>'+fmt(rate("rx"))+'</strong></section><section class="card metric"><small>Tráfego TX</small><strong>'+fmt(rate("tx"))+'</strong></section><section class="card metric"><small>Firmware</small><strong class="small">'+this.escape(sw.device?.firmware)+'</strong></section></div>';
         body += '<div class="peak-strip"><span>Picos registrados nos últimos 14 dias</span><strong>↓ RX '+fmt(sw.peaks?.total?.rx_bps||0)+'</strong><strong>↑ TX '+fmt(sw.peaks?.total?.tx_bps||0)+'</strong><span class="overview-macs">'+this.escape(sw.mac?.mac_known??0)+' MACs conhecidos</span></div>';
-        body += '<section class="card"><h3>Tráfego ao vivo</h3>'+this.trafficChart(sw.id)+'</section>';
+        body += '<section class="card"><h3>Histórico de tráfego</h3>'+this.ranges(sw.id)+this.trafficChart(sw.id)+this.dailyTable(sw.id)+'</section>';
         body += '<section class="card"><h3>Visão das interfaces</h3><p class="section-subtitle">Estado das portas e velocidade negociada</p>'+this.portFace(ps)+'</section>';
         body += '<div class="columns"><section class="card"><h3>Portas e tráfego</h3>'+table(ps.slice(0,12))+'</section><section class="card"><h3>Diagnóstico SFP+</h3>'+this.renderSfp(sw,true)+'<h3 class="spaced">Inventário MAC</h3><p>'+this.escape(sw.mac?.mac_current ?? "—")+' MACs atuais · '+this.escape(sw.mac?.mac_known ?? "—")+' conhecidos</p></section></div>';
       } else if(this.tab === "ports") {
@@ -158,10 +204,10 @@ class HaOracoPanel extends HTMLElement {
         body += '<section class="card"><h3>Visão das interfaces</h3>'+this.portFace(ps)+'</section>'
           +'<section class="card"><h3>Histórico de tráfego por porta</h3><p class="section-subtitle">Medições gravadas em SQLite · selecione uma interface</p>'
           +'<div class="port-selector">'+portNumbers.map(n=>'<button class="port-select '+(n===selected?'selected':'')+'" data-traffic-port="'+this.escape(n)+'" data-switch="'+this.escape(sw.id)+'">Porta '+this.escape(n)+'</button>').join('')+'</div>'
-          +this.trafficChart(sw.id,selected)+'</section>'
+          +this.ranges(sw.id,selected)+this.trafficChart(sw.id,selected)+this.dailyTable(sw.id,selected)+'</section>'
           +'<section class="card"><h3>Portas e utilização</h3>'+table(ps)+'</section>';
       }
-      else if(this.tab === "sfp") body += '<section class="card"><h3>Transceptor óptico</h3><p class="section-subtitle">Medições e dados de identificação disponíveis no firmware</p>'+this.renderSfp(sw)+'</section>';
+      else if(this.tab === "sfp") body += '<section class="card"><h3>Transceptor óptico</h3><p class="section-subtitle">Medições e dados de identificação disponíveis no firmware</p>'+this.renderSfp(sw)+this.snapshots(sw.id,'sfp','SFP+')+'</section>';
       else if(this.tab === "mac") {
         const macData=sw.mac||{};
         const macRows=macData.mac_history_entries||macData.mac_entries||[];
@@ -204,14 +250,14 @@ class HaOracoPanel extends HTMLElement {
             +(aggregate.groups?.length?tbl(['Grupo','Tipo','Membros','Porta agregada'],aggregate.groups.map(g=>'<tr><td>'+this.escape(g.group)+'</td><td>'+this.escape(g.type)+'</td><td>'+this.escape(g.members)+'</td><td>'+this.escape(g.aggregated_port)+'</td></tr>')):'<p class="empty">Nenhum grupo de agregação configurado.</p>')+'</section>';
         }
         body+='<section class="card"><h3>Isolamento de portas</h3><p class="section-subtitle">Listas apresentadas pelo firmware; o sentido das restrições ainda requer validação.</p>'+status(iso)
-          +(iso.length?tbl(['Porta','Lista informada','Portas listadas'],iso.map(p=>'<tr><td>Porta '+this.escape(p.port)+'</td><td>'+this.escape(p.raw_list)+'</td><td>'+this.escape(p.listed_ports?.join(', '))+'</td></tr>')):'')+'</section>';
+          +(iso.length?tbl(['Porta','Lista informada','Portas listadas'],iso.map(p=>'<tr><td>Porta '+this.escape(p.port)+'</td><td>'+this.escape(p.raw_list)+'</td><td>'+this.escape(p.listed_ports?.join(', '))+'</td></tr>')):'') +this.snapshots(sw.id,'isolation','Isolamento')+'</section>';
         body+='<section class="card"><h3>Spanning Tree — portas</h3><p class="section-subtitle">Estado, função, custo e parâmetros efetivos de STP.</p>'+status(stp)
           +(stp.length?tbl(['Porta','Estado','Função','Custo configurado','Custo efetivo','Prioridade','P2P efetivo','Edge efetivo'],stp.map(p=>
-            '<tr><td>Porta '+this.escape(p.port)+'</td><td>'+this.escape(p.state)+'</td><td>'+this.escape(p.role)+'</td><td>'+this.escape(p.path_cost_config)+'</td><td>'+this.escape(p.path_cost_actual)+'</td><td>'+this.escape(p.priority)+'</td><td>'+this.escape(p.p2p_actual)+'</td><td>'+this.escape(p.edge_actual)+'</td></tr>')):'')+'</section>';
+            '<tr><td>Porta '+this.escape(p.port)+'</td><td>'+this.escape(p.state)+'</td><td>'+this.escape(p.role)+'</td><td>'+this.escape(p.path_cost_config)+'</td><td>'+this.escape(p.path_cost_actual)+'</td><td>'+this.escape(p.priority)+'</td><td>'+this.escape(p.p2p_actual)+'</td><td>'+this.escape(p.edge_actual)+'</td></tr>')):'') +this.snapshots(sw.id,'stp_ports','STP por porta')+'</section>';
         const stormValue=v=>v===null||v===undefined?'Desativado':this.escape(v)+' kbit/s';
         body+='<section class="card"><h3>Controle de tempestades</h3><p class="section-subtitle">Limites configurados por interface. Desativado não significa tráfego zero.</p>'+status(storm)
           +(storm.length?tbl(['Porta','Broadcast','Multicast conhecido','Multicast desconhecido','Unicast desconhecido'],storm.map(p=>
-            '<tr><td>Porta '+this.escape(p.port)+'</td><td>'+stormValue(p.broadcast_kbps)+'</td><td>'+stormValue(p.known_multicast_kbps)+'</td><td>'+stormValue(p.unknown_multicast_kbps)+'</td><td>'+stormValue(p.unknown_unicast_kbps)+'</td></tr>')):'')+'</section>';
+            '<tr><td>Porta '+this.escape(p.port)+'</td><td>'+stormValue(p.broadcast_kbps)+'</td><td>'+stormValue(p.known_multicast_kbps)+'</td><td>'+stormValue(p.unknown_multicast_kbps)+'</td><td>'+stormValue(p.unknown_unicast_kbps)+'</td></tr>')):'') +this.snapshots(sw.id,'storm_control','Storm Control')+'</section>';
       }
       else if(this.tab === "system") {
         const oui=sw.oui||{};
@@ -239,7 +285,7 @@ class HaOracoPanel extends HTMLElement {
             +vlanRows.map(p=>'<tr><td><strong>Porta '+this.escape(p.port)+'</strong></td><td><span class="mode-pill">'+this.escape((p.mode||"—").toUpperCase())+'</span>'
               +(p.accepted_frames?'<small class="mode-detail">'+this.escape(p.accepted_frames)+'</small>':"")+'</td><td>'+this.escape(p.access_vlan??"—")+'</td><td>'+this.escape(p.native_vlan??"—")+'</td><td>'+fmt(p.tagged_vlans)+'</td><td>'+fmt(p.untagged_vlans)+'</td><td>'+fmt(p.allowed_vlans)+'</td></tr>').join("")+'</tbody></table></div>'
             :'<p class="empty">Nenhuma tabela de VLANs disponível ainda.</p>')
-          +'<p class="footnote">* A interface do firmware identifica a coluna como Native VLAN. Não assumimos que represente todas as configurações de PVID ou isolamento.</p></section>';
+          +'<p class="footnote">* A interface do firmware identifica a coluna como Native VLAN. Não assumimos que represente todas as configurações de PVID ou isolamento.</p>'+this.snapshots(sw.id,'vlan_ports','VLANs')+'</section>';
       }
       else body += '<section class="card"><h3>'+this.escape(tabs.find(t=>t[0]===this.tab)?.[1])+'</h3><p>Esta área será preenchida automaticamente quando os dados forem disponibilizados pela integração e validados no firmware. Nenhum dado fictício é exibido.</p></section>';
       function table(items) { return '<div class="scroll"><table><thead><tr><th>Interface</th><th>Link</th><th>Velocidade</th><th>RX</th><th>TX</th><th>Pico RX</th><th>Pico TX</th></tr></thead><tbody>'+items.map(row).join("")+'</tbody></table></div>'; }
@@ -275,6 +321,11 @@ class HaOracoPanel extends HTMLElement {
       input[type=search]{width:100%;padding:12px 14px;border:1px solid var(--divider-color);border-radius:8px;background:var(--secondary-background-color);color:var(--primary-text-color);margin-bottom:12px} .kv{display:flex;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--divider-color);gap:15px}.kv span{color:var(--secondary-text-color)}
 
       .vlan-table td{vertical-align:middle}.vlan-pill{display:inline-block;padding:3px 7px;margin:2px;border-radius:6px;background:var(--secondary-background-color);border:1px solid var(--divider-color);font-size:11px}.mode-pill{display:inline-block;border-radius:7px;padding:5px 8px;background:var(--secondary-background-color);border:1px solid var(--divider-color);font-size:10px;font-weight:650}.mode-detail{display:block;margin-top:5px;color:var(--secondary-text-color)}.muted{color:var(--secondary-text-color)}
+      .range-list{display:flex;gap:6px;flex-wrap:wrap;margin:12px 0 18px}
+      .range{border:1px solid var(--divider-color);border-radius:8px;padding:8px 11px;font-size:12px;color:var(--primary-text-color)}
+      .range.chosen{border-color:var(--primary-color);color:var(--primary-color);background:var(--secondary-background-color)}
+      .history-action{border:1px solid var(--divider-color);border-radius:9px;padding:11px 13px;margin:16px 0;color:var(--primary-text-color)}
+      .snapshot-list{margin:18px 0}.snapshot-list details{border:1px solid var(--divider-color);border-radius:8px;padding:12px;margin:7px 0}.snapshot-list summary{cursor:pointer}.snapshot-list pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px}
       .port-selector{display:flex;gap:7px;flex-wrap:wrap;margin:16px 0 20px}
       .port-select{padding:8px 13px;border:1px solid var(--divider-color);border-radius:9px;background:var(--secondary-background-color);font-size:12px;color:var(--primary-text-color)}
       .port-select.selected{border-color:var(--primary-color);background:color-mix(in srgb,var(--primary-color) 13%,var(--card-background-color));color:var(--primary-color)}
@@ -311,6 +362,13 @@ class HaOracoPanel extends HTMLElement {
       this.selectedPort[btn.dataset.switch]=btn.dataset.trafficPort;
       this.render();
     }));
+    this.shadowRoot.querySelectorAll("[data-chart-hours]").forEach(btn=>btn.addEventListener("click",()=>{
+      const id=btn.dataset.switch,port=btn.dataset.port,hours=Number(btn.dataset.chartHours);
+      this.chartHours[id+"|"+port]=hours;
+      this.fetchHistory(id,"traffic",port,hours);
+    }));
+    this.shadowRoot.querySelectorAll("[data-daily-switch]").forEach(btn=>btn.addEventListener("click",()=>this.fetchHistory(btn.dataset.dailySwitch,"daily",btn.dataset.dailyPort)));
+    this.shadowRoot.querySelectorAll("[data-snapshot-switch]").forEach(btn=>btn.addEventListener("click",()=>this.fetchHistory(btn.dataset.snapshotSwitch,"snapshots","__total__",24,btn.dataset.snapshotKind)));
     this.shadowRoot.getElementById("refresh")?.addEventListener("click",()=>this.refresh());
     this.shadowRoot.getElementById("mac-filter")?.addEventListener("change",ev=>{this.macFilter=ev.target.value;this.render()});
   }
