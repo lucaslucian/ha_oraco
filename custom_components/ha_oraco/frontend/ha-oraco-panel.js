@@ -84,9 +84,10 @@ class HaOracoPanel extends HTMLElement {
     const peak=Math.max(1,...samples.flatMap(v=>[v.rx,v.tx]));
     const points=key=>samples.map((v,i)=>((i*740)/Math.max(1,samples.length-1)+30).toFixed(1)
       +','+(159-v[key]/peak*134).toFixed(1)).join(' ');
+    const area=key=>"30,159 "+points(key)+" 770,159";
     const grid=[26,70,115,159].map(y=>'<line x1="30" x2="770" y1="'+y+'" y2="'+y+'" stroke="currentColor" opacity=".12" stroke-dasharray="4 5"/>').join("");
     return '<svg class="traffic-chart" viewBox="0 0 800 185" role="img" aria-label="Tráfego RX e TX">'
-      +grid+'<polyline points="'+points("rx")+'" fill="none" stroke="#29ade3" stroke-width="2.7" stroke-linejoin="round"/>'
+      +grid+'<polygon points="'+area("rx")+'" fill="#29ade3" opacity=".08"/><polygon points="'+area("tx")+'" fill="#49bf87" opacity=".07"/><polyline points="'+points("rx")+'" fill="none" stroke="#29ade3" stroke-width="2.7" stroke-linejoin="round"/>'
       +'<polyline points="'+points("tx")+'" fill="none" stroke="#49bf87" stroke-width="2.7" stroke-linejoin="round"/></svg>'
       +'<div class="chart-legend"><span>● RX — azul</span><span>● TX — verde</span><span>'
       +samples.length+' amostras '+(persisted.length?'registradas no banco':'desta sessão')+'</span></div>';
@@ -146,7 +147,7 @@ class HaOracoPanel extends HTMLElement {
       body += '<div class="heading"><h2>'+this.escape(sw.name)+'</h2><span>'+this.escape(sw.host)+'</span></div>';
       if (this.tab === "overview") {
         body += '<div class="stats"><section class="card metric"><small>Portas ativas</small><strong>'+online+' / '+ps.length+'</strong></section><section class="card metric"><small>Tráfego RX</small><strong>'+fmt(rate("rx"))+'</strong></section><section class="card metric"><small>Tráfego TX</small><strong>'+fmt(rate("tx"))+'</strong></section><section class="card metric"><small>Firmware</small><strong class="small">'+this.escape(sw.device?.firmware)+'</strong></section></div>';
-        body += '<div class="peak-strip"><span>Picos registrados nos últimos 14 dias</span><strong>RX '+fmt(sw.peaks?.total?.rx_bps||0)+'</strong><strong>TX '+fmt(sw.peaks?.total?.tx_bps||0)+'</strong></div>';
+        body += '<div class="peak-strip"><span>Picos registrados nos últimos 14 dias</span><strong>↓ RX '+fmt(sw.peaks?.total?.rx_bps||0)+'</strong><strong>↑ TX '+fmt(sw.peaks?.total?.tx_bps||0)+'</strong><span class="overview-macs">'+this.escape(sw.mac?.mac_known??0)+' dispositivos conhecidos</span></div>';
         body += '<section class="card"><h3>Tráfego ao vivo</h3>'+this.trafficChart(sw.id)+'</section>';
         body += '<section class="card"><h3>Visão das interfaces</h3><p class="section-subtitle">Estado das portas e velocidade negociada</p>'+this.portFace(ps)+'</section>';
         body += '<div class="columns"><section class="card"><h3>Portas e tráfego</h3>'+table(ps.slice(0,12))+'</section><section class="card"><h3>Diagnóstico SFP+</h3>'+this.renderSfp(sw,true)+'<h3 class="spaced">Inventário MAC</h3><p>'+this.escape(sw.mac?.mac_current ?? "—")+' MACs atuais · '+this.escape(sw.mac?.mac_known ?? "—")+' conhecidos</p></section></div>';
@@ -252,7 +253,20 @@ class HaOracoPanel extends HTMLElement {
       button.refresh{border:1px solid var(--divider-color);border-radius:8px;padding:9px 16px}
       .heading{display:flex;gap:12px;align-items:center;justify-content:space-between;margin:24px 0 14px}.heading span,small,p{color:var(--secondary-text-color)}
       .stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px}.card{background:var(--card-background-color);border:1px solid var(--divider-color);border-radius:12px;padding:20px;margin-bottom:16px}
-      .metric small{display:block;font-size:13px;margin-bottom:10px}.metric strong{font-size:25px;font-weight:500}.metric strong.small{font-size:15px}
+      .metric{position:relative;overflow:hidden;isolation:isolate;box-shadow:0 8px 26px rgba(0,0,0,.07)}
+      .metric:before{content:"";position:absolute;inset:0 0 auto;height:3px;background:linear-gradient(90deg,#178dff,#2dd4bb)}
+      .metric:nth-child(2):before{background:linear-gradient(90deg,#247dff,#29c7eb)}
+      .metric:nth-child(3):before{background:linear-gradient(90deg,#21bd83,#7bdfb2)}
+      .metric:nth-child(4):before{background:linear-gradient(90deg,#7d84fa,#aa93f4)}
+      .metric small{display:block;font-size:12px;margin-bottom:11px;color:var(--secondary-text-color)}
+      .metric strong{font-size:clamp(21px,2vw,28px);font-weight:650;letter-spacing:-.5px}
+      .metric strong.small{font-size:16px;line-height:1.5}
+      .card{box-shadow:0 7px 24px rgba(0,0,0,.055)}
+      .heading{border-bottom:1px solid var(--divider-color);padding-bottom:13px;margin-bottom:20px}
+      .traffic-chart{background:linear-gradient(180deg,transparent,color-mix(in srgb,var(--primary-color) 3%,transparent));border-radius:11px}
+      table tbody tr:hover{background:var(--secondary-background-color)}
+      button:focus-visible,input:focus-visible{outline:2px solid var(--primary-color);outline-offset:2px}
+
       .columns{display:grid;grid-template-columns:2fr 1fr;gap:16px}.port-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(82px,1fr));gap:10px}.port{background:var(--secondary-background-color);border:1px solid var(--divider-color);padding:12px;border-radius:8px;text-align:center}
       .port.active{border-color:var(--success-color,#4caf50)}.port b{display:block;font-size:16px}.port span{font-size:11px;color:var(--secondary-text-color)}.scroll{overflow:auto}
       .traffic-chart{display:block;width:100%;height:auto;max-height:200px} table{border-collapse:collapse;width:100%;font-size:13px;text-align:left}th,td{padding:12px 10px;border-bottom:1px solid var(--divider-color);white-space:nowrap}th{font-weight:500;color:var(--secondary-text-color)}
@@ -265,6 +279,7 @@ class HaOracoPanel extends HTMLElement {
       .port-select.selected{border-color:var(--primary-color);background:color-mix(in srgb,var(--primary-color) 13%,var(--card-background-color));color:var(--primary-color)}
       .event-list{display:grid;gap:8px}.event-item{display:flex;align-items:center;gap:12px;padding:12px 14px;background:var(--secondary-background-color);border:1px solid var(--divider-color);border-radius:9px;font-size:12px}.event-item time{margin-left:auto;color:var(--secondary-text-color);font-variant-numeric:tabular-nums}.event-dot{width:9px;height:9px;border-radius:50%;background:var(--primary-color);flex-shrink:0}.system-date{font-size:14px!important}
       .inventory-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:22px}.inventory-stats>div{background:var(--secondary-background-color);border-radius:12px;padding:17px}.inventory-stats small{display:block;color:var(--secondary-text-color);font-size:12px;margin-bottom:10px}.inventory-stats strong{display:block;font-size:20px;overflow-wrap:anywhere}
+      .overview-macs{margin-left:auto;font-size:11px;color:var(--secondary-text-color)}
       .peak-strip{display:flex;flex-wrap:wrap;gap:20px;align-items:center;padding:13px 18px;margin:-2px 0 15px;background:var(--card-background-color);border:1px solid var(--divider-color);border-radius:12px;font-size:12px}.peak-strip span{color:var(--secondary-text-color)}.peak-strip strong{font-size:13px}
       .topology-scroll{overflow:auto;max-height:700px;border-radius:12px;background:#0b1a29;padding:10px}.topology-svg{display:block;width:100%;min-width:800px;height:auto;max-height:none}.topology-disclaimer{font-size:12px;color:var(--secondary-text-color)}
       .section-subtitle{font-size:12px;color:var(--secondary-text-color);margin:-8px 0 18px}
