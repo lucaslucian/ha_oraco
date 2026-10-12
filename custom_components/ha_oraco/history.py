@@ -179,3 +179,12 @@ class HistoryDatabase:
 
     async def reclassify_inventory(self, vendors):
         return await self.hass.async_add_executor_job(self._reclassify_inventory, vendors.lookup)
+
+    def _recent_changes(self):
+        with self._connect() as db:
+            rows=db.execute("""SELECT kind,timestamp FROM snapshots
+                WHERE switch_id=? ORDER BY timestamp DESC LIMIT 40""", (self.key,)).fetchall()
+        return [{"kind":kind,"timestamp":timestamp} for kind,timestamp in rows]
+
+    async def recent_changes(self):
+        return await self.hass.async_add_executor_job(self._recent_changes)
