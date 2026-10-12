@@ -32,7 +32,9 @@ async def dashboard_data(hass, connection, msg):
             "peaks": data.get("peaks", {}),
             "traffic_history": data.get("traffic_history", []),
             "oui": {"prefix_count": len(coordinator.vendors.prefixes) if coordinator.vendors else 0,
-                    "last_updated": coordinator.vendors.last_updated if coordinator.vendors else None},
+                    "last_updated": coordinator.vendors.last_updated if coordinator.vendors else None,
+                    "last_attempt": coordinator.vendors.last_attempt if coordinator.vendors else None,
+                    "sources": coordinator.vendors.source_status if coordinator.vendors else {}},
         })
     connection.send_result(msg["id"], {"switches": switches})
 
