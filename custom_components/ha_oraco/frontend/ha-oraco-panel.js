@@ -12,6 +12,8 @@ class HaOracoPanel extends HTMLElement {
     this.chartHours = {};
     this.historyViews = {};
     this.historyPanels = {};
+    this.snapshotModal = null;
+    this.snapshotDay = null;
   }
   set hass(value) {
     this._hass = value;
@@ -161,43 +163,42 @@ class HaOracoPanel extends HTMLElement {
       this.snapshotDetails(value,level+1)+'</strong></div>').join('')+'</div>';
   }
   snapshots(switchId,kind,label) {
+    return '<button class="history-action" data-snapshot-switch="'+this.escape(switchId)+'" data-snapshot-kind="'+this.escape(kind)+'" data-snapshot-label="'+this.escape(label)+'">Histórico de '+this.escape(label)+' (90 dias)</button>';
+  }
+  snapshotDialog() {
+    if(!this.snapshotModal)return '';
+    const {switchId,kind,label}=this.snapshotModal;
     const key=switchId+"|snapshots|__total__|24|"+kind;
     const result=this.historyViews[key];
-    if(!result)return '<button class="history-action" data-snapshot-switch="'+this.escape(switchId)+'" data-snapshot-kind="'+kind+'">Ver histórico · '+this.escape(label)+' (90 dias)</button>';
-    if(result.loading)return '<p class="muted">Carregando histórico…</p>';
-    if(result.error)return '<p class="muted">'+this.escape(result.error)+'</p>';
-    if(result.items[0]?.day){
-      return '<div class="snapshot-list"><h4>Verificações dos últimos 90 dias · '+this.escape(label)+'</h4>'+
-        result.items.map(day=>'<details class="snapshot-day"><summary>'+
-          this.escape(new Date(day.day+"T12:00:00").toLocaleDateString("pt-BR"))+' · '+
-          (day.changes?day.changes+" alteração(ões)":"Sem alterações")+' · '+day.checks+' verificações</summary>'+
-          '<p class="muted">Última análise: '+new Date(day.checked_at).toLocaleString("pt-BR")+'</p>'+
-          (day.events||[]).map(ev=>'<details class="snapshot-revision"><summary>Alteração às '+new Date(ev.timestamp).toLocaleTimeString("pt-BR")+'</summary>'+
-            '<div class="snapshot-content">'+this.snapshotDetails(ev.data)+'</div></details>').join('')+
-          (day.changes===0?'<p class="muted">Estado sem alterações nas verificações deste dia.</p>':'')+'</details>').join('')+
-        '</div>';
+    let body='<p class="muted">Carregando verificações…</p>';
+    if(result && !result.loading){
+      if(result.error)body='<p class="muted">'+this.escape(result.error)+'</p>';
+      else {
+        const days=(result.items||[]).map(item=>item.day?item:{
+          day:String(item.timestamp||'').slice(0,10),
+          checked_at:item.timestamp,checks:1,changes:1,
+          events:[item]
+        });
+        const unique=[...new Set(days.map(d=>d.day))];
+        const current=unique.includes(this.snapshotDay)?this.snapshotDay:unique[0];
+        const selected=days.filter(d=>d.day===current);
+        const events=selected.flatMap(d=>d.events||[]);
+        const checks=selected.reduce((n,d)=>n+Number(d.checks||0),0);
+        const changes=selected.reduce((n,d)=>n+Number(d.changes||0),0);
+        const list=unique.map(day=>{
+          const entries=days.filter(d=>d.day===day);
+          const count=entries.reduce((n,d)=>n+Number(d.changes||0),0);
+          return '<button class="audit-day '+(day===current?'active':'')+'" data-audit-day="'+this.escape(day)+'"><strong>'+this.escape(day.split('-').reverse().join('/'))+'</strong><span>'+(count?count+' alteração(ões)':'Sem alterações')+'</span></button>';
+        }).join('');
+        const details=events.map(ev=>'<article class="audit-event"><div class="audit-event-heading">Registro · '+this.escape(new Date(ev.timestamp).toLocaleTimeString('pt-BR'))+'</div>'+this.snapshotDetails(ev.data)+'</article>').join('');
+        body=unique.length?
+          '<div class="audit-layout"><div class="audit-days">'+list+'</div><section class="audit-content"><h3>'+this.escape(current.split('-').reverse().join('/'))+'</h3><p class="section-subtitle">'+checks+' verificações · '+changes+' alterações</p>'+
+          (selected[0]?.checked_at?'<p class="muted">Última análise: '+this.escape(new Date(selected[0].checked_at).toLocaleString('pt-BR'))+'</p>':'')+
+          (details||'<p class="muted">Nenhuma alteração neste dia. O último estado conhecido foi mantido.</p>')+'</section></div>':
+          '<p class="muted">Nenhum histórico disponível nos últimos 90 dias.</p>';
+      }
     }
-    const grouped=new Map();
-    for(const record of result.items){
-      const date=new Date(record.timestamp);
-      const day=Number.isNaN(date.getTime())?String(record.timestamp).slice(0,10):date.toLocaleDateString("pt-BR");
-      if(!grouped.has(day))grouped.set(day,[]);
-      grouped.get(day).push(record);
-    }
-    const display=Object.entries;
-    const nice=(data,depth=0)=>{
-      if(!data||typeof data!=="object")return '<span>'+this.escape(data)+'</span>';
-      if(Array.isArray(data))return '<span>'+this.escape(data.join(", "))+'</span>';
-      return '<div class="history-fields">'+display(data).map(([key,value])=>'<div class="history-field"><span>'+
-        this.escape(this.sfpLabel(key))+'</span><strong>'+
-        (value&&typeof value==="object"?nice(value,depth+1):this.escape(value))+'</strong></div>').join('')+'</div>';
-    };
-    return '<div class="snapshot-list"><h4>Registros de '+this.escape(label)+' · últimos 90 dias</h4>'+
-      (grouped.size?[...grouped].map(([day,items])=>'<details class="snapshot-day"><summary>'+this.escape(day)+' · '+items.length+
-        (items.length===1?' estado registrado':' alterações registradas')+'</summary>'+
-        items.map((r,index)=>'<details class="snapshot-revision" '+(index===0?'open':'')+'><summary>'+new Date(r.timestamp).toLocaleTimeString("pt-BR")+'</summary>'+
-          nice(r.data)+'</details>').join('')+'</details>').join(''):'<p class="muted">Nenhum registro no período.</p>')+
-      '<p class="footnote">Um novo registro é criado somente quando a leitura muda. Em dias sem alterações, permanece válido o último estado conhecido.</p></div>';
+    return '<div class="audit-backdrop" data-modal-backdrop="true"><div class="audit-dialog" role="dialog" aria-modal="true" aria-label="Histórico de '+this.escape(label)+'"><div class="audit-header"><div><h2>Histórico de '+this.escape(label)+'</h2><p>Verificações e mudanças detectadas nos últimos 90 dias</p></div><button class="audit-close" data-close-audit="true" aria-label="Fechar histórico">×</button></div><div class="audit-body">'+body+'</div></div></div>';
   }
   trafficChart(id, port=null) {
     const sw=(this.data?.switches||[]).find(x=>x.id===id);
@@ -414,6 +415,26 @@ class HaOracoPanel extends HTMLElement {
       .history-action{border:1px solid var(--divider-color);border-radius:9px;padding:11px 13px;margin:16px 0;color:var(--primary-text-color)}
       .snapshot-list{margin:18px 0}.snapshot-list details{border:1px solid var(--divider-color);border-radius:8px;padding:12px;margin:7px 0}.snapshot-list summary{cursor:pointer}.snapshot-list pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px}
       .endpoint-detail{display:block;font-weight:400;color:var(--secondary-text-color);max-width:650px;white-space:normal;overflow-wrap:anywhere;margin-top:4px}
+      .audit-backdrop{position:fixed;z-index:1000;inset:0;background:rgba(0,0,0,.72);display:flex;align-items:center;justify-content:center;padding:20px}
+      .audit-dialog{display:flex;flex-direction:column;width:min(100%,1020px);max-height:min(88vh,940px);background:var(--card-background-color);border:1px solid var(--divider-color);border-radius:16px;box-shadow:0 26px 90px rgba(0,0,0,.48);overflow:hidden}
+      .audit-header{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:20px 24px;border-bottom:1px solid var(--divider-color)}
+      .audit-header h2{font-weight:650;margin:0;font-size:19px}.audit-header p{margin:6px 0 0;color:var(--secondary-text-color);font-size:12px}
+      .audit-close{border:1px solid var(--divider-color);border-radius:9px;width:36px;height:36px;color:var(--primary-text-color);font-size:24px;flex-shrink:0}
+      .audit-body{min-height:130px;overflow:auto;padding:18px 22px}
+      .audit-layout{display:grid;grid-template-columns:minmax(185px,235px) minmax(0,1fr);gap:20px}
+      .audit-days{display:flex;flex-direction:column;gap:6px;max-height:65vh;overflow-y:auto}
+      .audit-day{display:flex;flex-direction:column;gap:5px;text-align:left;padding:12px;border:1px solid var(--divider-color);border-radius:9px;color:var(--primary-text-color);font-size:12px}
+      .audit-day span{font-size:11px;color:var(--secondary-text-color)}
+      .audit-day.active{background:var(--secondary-background-color);border-color:var(--primary-color)}
+      .audit-content{min-width:0;max-height:65vh;overflow:auto;padding:5px}
+      .audit-content h3{margin:0 0 12px}
+      .audit-event{margin-top:18px;border:1px solid var(--divider-color);border-radius:10px;padding:12px;max-width:100%;overflow:hidden}
+      .audit-event-heading{font-weight:600;margin-bottom:12px}
+      .audit-content .history-fields{display:grid;gap:7px;min-width:0;width:100%}
+      .audit-content .history-field{display:grid;grid-template-columns:minmax(110px,1fr) minmax(0,2fr);align-items:start;gap:12px}
+      .audit-content .history-field>span{text-align:left;overflow-wrap:anywhere}
+      .audit-content .history-field>strong{text-align:left;min-width:0;overflow-wrap:anywhere}
+      @media(max-width:650px){.audit-backdrop{padding:8px}.audit-layout{grid-template-columns:1fr}.audit-days{flex-direction:row;max-height:none;overflow-x:auto}.audit-day{min-width:145px}.audit-content{max-height:54vh}.audit-body{padding:12px}}
       .module-state{display:flex;align-items:center;gap:10px;padding:12px;margin:12px 0;border-radius:10px;background:var(--secondary-background-color);font-size:12px}
       .module-light{width:8px;height:8px;border-radius:50%;background:var(--disabled-text-color)}
       .module-state.connected .module-light{background:#3bbb84}
@@ -464,7 +485,7 @@ class HaOracoPanel extends HTMLElement {
       @media(max-width:950px){.stats{grid-template-columns:repeat(2,minmax(0,1fr))}.columns{grid-template-columns:1fr}}@media(max-width:500px){main{padding:14px}.stats{gap:8px}.card{padding:14px}.metric strong{font-size:20px}}
     </style><main><header><div class="brand-wrap"><h1 class="brand"><img src="/ha_oraco_static/brand/icon.svg" alt="" aria-hidden="true"/> HoraInfo</h1><div class="brand-subtitle">${this.escape(switches.length===1?(switches[0].device?.name||switches[0].device?.model||switches[0].host):switches.length+" equipamentos monitorados")}</div></div><button class="refresh" id="refresh">Atualizar</button></header>
     <nav>${tabs.map(([id,label])=>'<button data-tab="'+id+'" class="'+(id===this.tab?"selected":"")+'">'+label+'</button>').join("")}</nav>
-    ${body}</main>`;
+    ${body}</main>${this.snapshotDialog()}`;
     this.shadowRoot.querySelectorAll("[data-tab]").forEach(el => el.addEventListener("click", () => {this.tab=el.dataset.tab;this.render();this.loadCurrentCharts()}));
     this.shadowRoot.querySelectorAll("[data-traffic-port]").forEach(btn=>btn.addEventListener("click",()=>{
       this.selectedPort[btn.dataset.switch]=btn.dataset.trafficPort;
@@ -478,7 +499,20 @@ class HaOracoPanel extends HTMLElement {
       this.fetchHistory(id,"traffic",port,hours);
     }));
     this.shadowRoot.querySelectorAll("[data-daily-switch]").forEach(btn=>btn.addEventListener("click",()=>this.fetchHistory(btn.dataset.dailySwitch,"daily",btn.dataset.dailyPort)));
-    this.shadowRoot.querySelectorAll("[data-snapshot-switch]").forEach(btn=>btn.addEventListener("click",()=>this.fetchHistory(btn.dataset.snapshotSwitch,"snapshots","__total__",24,btn.dataset.snapshotKind)));
+    this.shadowRoot.querySelectorAll("[data-snapshot-switch]").forEach(btn=>btn.addEventListener("click",()=>{
+      this.snapshotModal={switchId:btn.dataset.snapshotSwitch,kind:btn.dataset.snapshotKind,label:btn.dataset.snapshotLabel};
+      this.snapshotDay=null;
+      this.fetchHistory(btn.dataset.snapshotSwitch,"snapshots","__total__",24,btn.dataset.snapshotKind);
+    }));
+    this.shadowRoot.querySelectorAll("[data-close-audit]").forEach(btn=>btn.addEventListener("click",()=>{
+      this.snapshotModal=null;this.render();
+    }));
+    this.shadowRoot.querySelectorAll("[data-audit-day]").forEach(btn=>btn.addEventListener("click",()=>{
+      this.snapshotDay=btn.dataset.auditDay;this.render();
+    }));
+    this.shadowRoot.querySelectorAll("[data-modal-backdrop]").forEach(el=>el.addEventListener("click",e=>{
+      if(e.target===el){this.snapshotModal=null;this.render();}
+    }));
     this.shadowRoot.querySelectorAll("[data-history-port]").forEach(el=>el.addEventListener("change",()=>{
       this.selectedPort[el.dataset.historyPort]=el.value;
       this.render();
