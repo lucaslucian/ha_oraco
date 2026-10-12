@@ -87,7 +87,7 @@ class HaOracoPanel extends HTMLElement {
       const result=await this._hass.connection.sendMessagePromise({
         type:"ha_oraco/history",entry_id:switchId,mode,port,hours,kind
       });
-      this.historyViews[key]={items:result.items||[],loading:false};
+      this.historyViews[key]={items:result.items||[],total:result.total||null,loading:false};
     } catch(error) {
       this.historyViews[key]={loading:false,error:String(error),items:[]};
     }
@@ -100,15 +100,32 @@ class HaOracoPanel extends HTMLElement {
     return '<div class="range-list">'+options.map(([hours,label])=>
       '<button data-chart-hours="'+hours+'" data-switch="'+this.escape(switchId)+'" data-port="'+this.escape(port)+'" class="range '+(hours===chosen?'chosen':'')+'">'+label+'</button>').join('')+'</div>';
   }
+  prettyBytes(value) {
+    const n=Number(value)||0;
+    return n>=1e12?(n/1e12).toLocaleString("pt-BR",{maximumFractionDigits:2})+" TB":
+      n>=1e9?(n/1e9).toLocaleString("pt-BR",{maximumFractionDigits:2})+" GB":
+      n>=1e6?(n/1e6).toLocaleString("pt-BR",{maximumFractionDigits:2})+" MB":
+      n>=1e3?(n/1e3).toLocaleString("pt-BR",{maximumFractionDigits:1})+" KB":n+" B";
+  }
   dailyTable(switchId,port="__total__") {
+    const hours=this.chartHours[switchId+"|"+port]||24;
+    const current=this.historyViews[switchId+"|traffic|"+port+"|"+hours+"|sfp"];
+    const totals=current?.total;
     const key=switchId+"|daily|"+port+"|24|sfp";
     const result=this.historyViews[key];
-    if(!result) return '<button class="history-action" data-daily-switch="'+this.escape(switchId)+'" data-daily-port="'+this.escape(port)+'">Ver volume diário RX/TX (até 365 dias)</button>';
-    if(result.loading) return '<p class="muted">Consultando totais diários…</p>';
-    if(result.error) return '<p class="muted">'+this.escape(result.error)+'</p>';
-    const readable=v=>Number(v)>=1e12?(Number(v)/1e12).toFixed(2)+" TB":Number(v)>=1e9?(Number(v)/1e9).toFixed(2)+" GB":Number(v)>=1e6?(Number(v)/1e6).toFixed(2)+" MB":Number(v).toLocaleString("pt-BR")+" B";
-    return '<div class="scroll"><table><thead><tr><th>Dia</th><th>Recebido (RX)</th><th>Enviado (TX)</th></tr></thead><tbody>'+
-      result.items.slice(0,365).map(r=>'<tr><td>'+this.escape(r.day)+'</td><td>'+readable(r.rx_bytes)+'</td><td>'+readable(r.tx_bytes)+'</td></tr>').join('')+'</tbody></table></div>';
+    const box='<div class="volume-strip"><div><small>Recebido no período selecionado</small><strong>'+
+      (totals?this.prettyBytes(totals.rx_bytes):"Aguardando consulta")+'</strong></div>'+
+      '<div><small>Enviado no período selecionado</small><strong>'+
+      (totals?this.prettyBytes(totals.tx_bytes):"Aguardando consulta")+'</strong></div></div>';
+    if(!result)return box+'<button class="history-action" data-daily-switch="'+this.escape(switchId)+'" data-daily-port="'+this.escape(port)+'">Carregar gráfico de volume por dia (30 dias)</button>';
+    if(result.loading)return box+'<p class="muted">Consultando totais diários…</p>';
+    if(result.error)return box+'<p class="muted">'+this.escape(result.error)+'</p>';
+    const records=result.items.slice(0,30).reverse(),largest=Math.max(1,...records.flatMap(r=>[r.rx_bytes,r.tx_bytes]));
+    const chart='<div class="daily-bars">'+records.map(r=>'<div class="daily-bar-day" title="'+this.escape(r.day)+' · RX '+this.prettyBytes(r.rx_bytes)+' · TX '+this.prettyBytes(r.tx_bytes)+'">'+
+      '<div class="bar-pair"><i class="bar-rx" style="height:'+Math.max(1,r.rx_bytes/largest*105)+'px"></i><i class="bar-tx" style="height:'+Math.max(1,r.tx_bytes/largest*105)+'px"></i></div>'+
+      '<small>'+this.escape(r.day.slice(5))+'</small></div>').join('')+'</div>';
+    return box+'<h4>Volume diário RX/TX · últimos 30 dias</h4>'+chart+
+      '<div class="chart-legend"><span>● RX — azul</span><span>● TX — verde</span></div>';
   }
   snapshots(switchId,kind,label) {
     const key=switchId+"|snapshots|__total__|24|"+kind;
@@ -328,6 +345,15 @@ class HaOracoPanel extends HTMLElement {
       .range.chosen{border-color:var(--primary-color);color:var(--primary-color);background:var(--secondary-background-color)}
       .history-action{border:1px solid var(--divider-color);border-radius:9px;padding:11px 13px;margin:16px 0;color:var(--primary-text-color)}
       .snapshot-list{margin:18px 0}.snapshot-list details{border:1px solid var(--divider-color);border-radius:8px;padding:12px;margin:7px 0}.snapshot-list summary{cursor:pointer}.snapshot-list pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px}
+      .volume-strip{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:15px 0}
+      .volume-strip>div{padding:16px 18px;background:var(--secondary-background-color);border-radius:10px;border:1px solid var(--divider-color)}
+      .volume-strip small{display:block;color:var(--secondary-text-color);margin-bottom:8px}
+      .volume-strip strong{font-size:22px;font-weight:650}
+      .daily-bars{display:flex;gap:4px;align-items:flex-end;overflow-x:auto;min-height:158px;padding:12px 0;border-bottom:1px solid var(--divider-color)}
+      .daily-bar-day{min-width:27px;flex:1;text-align:center;font-size:9px;color:var(--secondary-text-color)}
+      .bar-pair{height:112px;display:flex;gap:2px;align-items:end;justify-content:center}
+      .bar-pair i{display:block;width:36%;border-radius:3px 3px 0 0}.bar-rx{background:#29ade3}.bar-tx{background:#49bf87}
+      .daily-bar-day small{font-size:9px}
       .port-selector{display:flex;gap:7px;flex-wrap:wrap;margin:16px 0 20px}
       .port-select{padding:8px 13px;border:1px solid var(--divider-color);border-radius:9px;background:var(--secondary-background-color);font-size:12px;color:var(--primary-text-color)}
       .port-select.selected{border-color:var(--primary-color);background:color-mix(in srgb,var(--primary-color) 13%,var(--card-background-color));color:var(--primary-color)}
@@ -362,7 +388,8 @@ class HaOracoPanel extends HTMLElement {
     this.shadowRoot.querySelectorAll("[data-tab]").forEach(el => el.addEventListener("click", () => {this.tab=el.dataset.tab;this.render()}));
     this.shadowRoot.querySelectorAll("[data-traffic-port]").forEach(btn=>btn.addEventListener("click",()=>{
       this.selectedPort[btn.dataset.switch]=btn.dataset.trafficPort;
-      this.render();
+      const id=btn.dataset.switch,port=btn.dataset.trafficPort;
+      this.fetchHistory(id,"traffic",port,this.chartHours[id+"|"+port]||24);
     }));
     this.shadowRoot.querySelectorAll("[data-chart-hours]").forEach(btn=>btn.addEventListener("click",()=>{
       const id=btn.dataset.switch,port=btn.dataset.port,hours=Number(btn.dataset.chartHours);
