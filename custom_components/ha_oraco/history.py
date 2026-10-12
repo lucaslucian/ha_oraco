@@ -33,6 +33,7 @@ class HistoryDatabase:
             )""")
             db.execute("""CREATE INDEX IF NOT EXISTS idx_traffic_recent
                 ON traffic(switch_id,port,timestamp)""")
+            db.execute("CREATE INDEX IF NOT EXISTS idx_traffic_expiry ON traffic(timestamp)")
             db.execute("""CREATE TABLE IF NOT EXISTS mac_inventory (
                 switch_id TEXT NOT NULL, vlan TEXT NOT NULL, mac TEXT NOT NULL,
                 port TEXT, vendor TEXT, classification TEXT,
@@ -44,6 +45,7 @@ class HistoryDatabase:
                 timestamp TEXT NOT NULL, checksum TEXT NOT NULL, payload TEXT NOT NULL,
                 PRIMARY KEY (switch_id,kind,timestamp)
             )""")
+            db.execute("CREATE INDEX IF NOT EXISTS idx_snapshots_expiry ON snapshots(timestamp)")
             db.execute("""CREATE INDEX IF NOT EXISTS idx_mac_seen
                 ON mac_inventory(switch_id,last_seen)""")
 
@@ -163,7 +165,11 @@ class HistoryDatabase:
         stamp = datetime.now(timezone.utc).isoformat()
         cutoff = (datetime.now(timezone.utc)-timedelta(days=90)).isoformat()
         with self._connect() as db:
-            latest = db.execute("SELECT checksum FROM snapshots WHERE switch_id=? AND kind=? ORDER BY timestamp DESC LIMIT 1", (self.key,kind)).fetchone()
+            latest = db.execute("SELECT checksum,timestamp FROM snapshots WHERE switch_id=? AND kind=? ORDER BY timestamp DESC LIMIT 1", (self.key,kind)).fetchone()
+            if kind == "sfp" and latest:
+                last_time = datetime.fromisoformat(latest[1])
+                if datetime.now(timezone.utc) - last_time < timedelta(minutes=5):
+                    return
             if latest is None or latest[0] != digest:
                 db.execute("INSERT INTO snapshots (switch_id,kind,timestamp,checksum,payload) VALUES (?,?,?,?,?)", (self.key,kind,stamp,digest,encoded))
             db.execute("DELETE FROM snapshots WHERE timestamp < ?", (cutoff,))
