@@ -38,9 +38,9 @@ class HaOracoPanel extends HTMLElement {
   }
 
   loadCurrentCharts(refresh=false) {
-    if(!this._hass||!this.data||!["overview","ports"].includes(this.tab))return;
+    if(!this._hass||!this.data||this.tab!=="history")return;
     for(const sw of this.data.switches||[]){
-      const port=this.tab==="ports"?(this.selectedPort[sw.id]||Object.keys(sw.ports||{})[0]):"__total__";
+      const port=this.selectedPort[sw.id]||"__total__";
       if(!port)continue;
       const hours=this.chartHours[sw.id+"|"+port]||24;
       const trafficKey=sw.id+"|traffic|"+port+"|"+hours+"|sfp";
@@ -74,7 +74,7 @@ class HaOracoPanel extends HTMLElement {
   }
   renderSfp(sw,compact=false) {
     const raw=sw.sfp?.sfp||{};
-    if(!Object.keys(raw).length)return '<p class="empty">Nenhuma informação óptica disponível.</p>';
+    if(!Object.keys(raw).length)return '<p class="empty">Diagnóstico SFP+ indisponível nesta coleta. Consulte Sistema → Saúde das consultas para identificar o erro. Não é possível concluir que o módulo está desconectado.</p>';
     const readings=["rx_dbm","tx_dbm","temperature_c","voltage_v","current_ma"];
     const fields=readings.slice(0,compact?4:5).map(k=>'<div class="optical-item"><small>'
       +this.escape(this.sfpLabel(k))+'</small><strong>'+this.escape(this.sfpValue(k,raw[k]))+'</strong></div>').join("");
@@ -83,9 +83,10 @@ class HaOracoPanel extends HTMLElement {
       .map(([k,v])=>'<div class="detail-item"><small>'+this.escape(this.sfpLabel(k))
       +'</small><strong>'+this.escape(v)+'</strong></div>').join("");
     const present=String(raw.module_present||"").trim().toLowerCase();
-    const presence=present==="yes"||present==="true"?
+    const identified=Boolean(raw.vendor||raw.part_number||raw.serial_number||raw.transceiver);
+    const presence=present==="yes"||present==="true"||(!present&&identified)?
       '<div class="module-state connected"><span class="module-light"></span>Módulo SFP+ detectado'+(raw.port?' · '+this.escape(raw.port):'')+'</div>':
-      present==="no"||present==="false"?
+      (present==="no"||present==="false")&&!identified?
       '<div class="module-state"><span class="module-light"></span>Nenhum módulo óptico informado</div>':"";
     return presence+'<div class="optical-grid">'+fields+'</div>'+(extra?'<h4>Identificação do transceptor</h4><div class="detail-grid">'+extra+'</div>':"");
   }
@@ -116,10 +117,10 @@ class HaOracoPanel extends HTMLElement {
   }
   ranges(switchId,port="__total__") {
     const chosen=this.chartHours[switchId+"|"+port]||24;
-    const options=[[1,"1 hora"],[6,"6 horas"],[12,"12 horas"],[24,"1 dia"],
+    const options=[[1,"Última hora"],[6,"6 horas"],[12,"12 horas"],[24,"1 dia"],
       [72,"3 dias"],[120,"5 dias"],[168,"7 dias"],[360,"15 dias"],[720,"30 dias"]];
-    return '<div class="range-list">'+options.map(([hours,label])=>
-      '<button data-chart-hours="'+hours+'" data-switch="'+this.escape(switchId)+'" data-port="'+this.escape(port)+'" class="range '+(hours===chosen?'chosen':'')+'">'+label+'</button>').join('')+'</div>';
+    return '<select class="history-select" data-chart-hours-select="'+this.escape(switchId)+'" data-port="'+this.escape(port)+'">'+
+      options.map(([hours,label])=>'<option value="'+hours+'" '+(hours===chosen?'selected':'')+'>'+label+'</option>').join('')+'</select>';
   }
   prettyBytes(value) {
     const n=Number(value)||0;
@@ -141,11 +142,13 @@ class HaOracoPanel extends HTMLElement {
     if(!result)return box+'<p class="muted">Preparando gráfico de volume diário...</p>';
     if(result.loading)return box+'<p class="muted">Consultando totais diários…</p>';
     if(result.error)return box+'<p class="muted">'+this.escape(result.error)+'</p>';
-    const records=result.items.slice(0,30).reverse(),largest=Math.max(1,...records.flatMap(r=>[r.rx_bytes,r.tx_bytes]));
+    const chosen=this.chartHours[switchId+"|"+port]||24;
+    const limit=Math.min(30,Math.max(1,Math.ceil(chosen/24)));
+    const records=result.items.slice(0,limit).reverse(),largest=Math.max(1,...records.flatMap(r=>[r.rx_bytes,r.tx_bytes]));
     const chart='<div class="daily-bars">'+records.map(r=>'<div class="daily-bar-day" title="'+this.escape(r.day)+' · RX '+this.prettyBytes(r.rx_bytes)+' · TX '+this.prettyBytes(r.tx_bytes)+'">'+
       '<div class="bar-pair"><i class="bar-rx" style="height:'+Math.max(1,r.rx_bytes/largest*105)+'px"></i><i class="bar-tx" style="height:'+Math.max(1,r.tx_bytes/largest*105)+'px"></i></div>'+
       '<small>'+this.escape(r.day.slice(5))+'</small></div>').join('')+'</div>';
-    return box+'<h4>Volume diário RX/TX · últimos 30 dias</h4>'+chart+
+    return box+'<h4>Volume diário RX/TX · período selecionado</h4>'+chart+
       '<div class="chart-legend"><span>● RX — azul</span><span>● TX — verde</span></div>';
   }
   snapshotDetails(data,level=0) {
@@ -259,7 +262,7 @@ class HaOracoPanel extends HTMLElement {
   render() {
     if (!this.shadowRoot) return;
     const switches = this.data?.switches || [];
-    const tabs = [["overview","Visão geral"],["ports","Portas"],["sfp","SFP+"],["mac","Dispositivos"],["vlan","VLANs"],["protection","Proteções"],["topology","Mapa de rede"],["system","Sistema"]];
+    const tabs = [["overview","Visão geral"],["ports","Portas"],["history","Histórico"],["sfp","SFP+"],["mac","Dispositivos"],["vlan","VLANs"],["protection","Proteções"],["topology","Mapa de rede"],["system","Sistema"]];
     let body = this.error ? '<section class="card">Não foi possível consultar os dados. '+this.escape(this.error)+'</section>' : "";
     if (!switches.length && !this.error) body = '<section class="card">Nenhum switch configurado ou aguardando dados.</section>';
     for (const sw of switches) {
@@ -273,18 +276,20 @@ class HaOracoPanel extends HTMLElement {
       if (this.tab === "overview") {
         body += '<div class="stats"><section class="card metric"><small>Portas ativas</small><strong>'+online+' / '+ps.length+'</strong></section><section class="card metric"><small>Tráfego RX</small><strong>'+fmt(rate("rx"))+'</strong></section><section class="card metric"><small>Tráfego TX</small><strong>'+fmt(rate("tx"))+'</strong></section><section class="card metric"><small>Firmware</small><strong class="small">'+this.escape(sw.device?.firmware)+'</strong></section></div>';
         body += '<div class="peak-strip"><span>Picos registrados nos últimos 30 dias</span><strong>↓ RX '+fmt(sw.peaks?.total?.rx_bps||0)+'</strong><strong>↑ TX '+fmt(sw.peaks?.total?.tx_bps||0)+'</strong><span class="overview-macs">'+this.escape(sw.mac?.mac_known??0)+' MACs conhecidos</span></div>';
-        body += '<section class="card"><h3>Histórico de tráfego</h3>'+this.ranges(sw.id)+this.trafficChart(sw.id)+this.dailyTable(sw.id)+'</section>';
+
         body += '<section class="card"><h3>Visão das interfaces</h3><p class="section-subtitle">Estado das portas e velocidade negociada</p>'+this.portFace(ps)+'</section>';
         body += '<div class="columns"><section class="card"><h3>Portas e tráfego</h3>'+table(ps.slice(0,12))+'</section><section class="card"><h3>Diagnóstico SFP+</h3>'+this.renderSfp(sw,true)+'<h3 class="spaced">Inventário MAC</h3><p>'+this.escape(sw.mac?.mac_current ?? "—")+' MACs atuais · '+this.escape(sw.mac?.mac_known ?? "—")+' conhecidos</p></section></div>';
       } else if(this.tab === "ports") {
-        const portNumbers=ps.map(p=>String(p.port));
-        const selected=portNumbers.includes(this.selectedPort[sw.id])?this.selectedPort[sw.id]:portNumbers[0];
-        if(selected) this.selectedPort[sw.id]=selected;
-        body += '<section class="card"><h3>Visão das interfaces</h3>'+this.portFace(ps)+'</section>'
-          +'<section class="card"><h3>Histórico de tráfego por porta</h3><p class="section-subtitle">Medições gravadas em SQLite · selecione uma interface</p>'
-          +'<div class="port-selector">'+portNumbers.map(n=>'<button class="port-select '+(n===selected?'selected':'')+'" data-traffic-port="'+this.escape(n)+'" data-switch="'+this.escape(sw.id)+'">Porta '+this.escape(n)+'</button>').join('')+'</div>'
-          +this.ranges(sw.id,selected)+this.trafficChart(sw.id,selected)+this.dailyTable(sw.id,selected)+'</section>'
+        body += '<section class="card"><h3>Interfaces em tempo real</h3>'+this.portFace(ps)+'</section>'
           +'<section class="card"><h3>Portas e utilização</h3>'+table(ps)+'</section>';
+      } else if(this.tab === "history") {
+        const selected=this.selectedPort[sw.id]||"__total__";
+        const options=['<option value="__total__" '+(selected==="__total__"?'selected':'')+'>Switch inteiro</option>']
+          .concat(ps.map(p=>'<option value="'+this.escape(p.port)+'" '+(selected===String(p.port)?'selected':'')+'>Porta '+this.escape(p.port)+'</option>'));
+        body += '<section class="card"><h3>Histórico de tráfego</h3><p class="section-subtitle">Médias e picos registrados, com retenção máxima de 30 dias</p>'
+          +'<div class="history-controls"><label>Interface<select class="history-select" data-history-port="'+this.escape(sw.id)+'">'+options.join('')+'</select></label>'
+          +'<label>Período'+this.ranges(sw.id,selected)+'</label></div>'
+          +this.trafficChart(sw.id,selected==="__total__"?null:selected)+this.dailyTable(sw.id,selected)+'</section>';
       }
       else if(this.tab === "sfp") body += '<section class="card"><h3>Transceptor óptico</h3><p class="section-subtitle">Medições e dados de identificação disponíveis no firmware</p>'+this.renderSfp(sw)+this.snapshots(sw.id,'sfp','SFP+')+'</section>';
       else if(this.tab === "mac") {
@@ -413,6 +418,9 @@ class HaOracoPanel extends HTMLElement {
       .snapshot-revision{margin:11px 0;background:var(--card-background-color)}.snapshot-day summary,.snapshot-revision summary{cursor:pointer;font-weight:550}
       .history-fields{display:grid;gap:6px;margin:12px 0}.history-field{display:flex;align-items:flex-start;justify-content:space-between;gap:15px;padding:8px;border-bottom:1px solid var(--divider-color);font-size:12px}
       .history-field>span{color:var(--secondary-text-color)}.history-field>strong{font-weight:500;text-align:right;overflow-wrap:anywhere}
+      .history-controls{display:flex;gap:18px;align-items:end;flex-wrap:wrap;margin:17px 0}
+      .history-controls label{display:flex;flex-direction:column;gap:7px;font-size:12px;color:var(--secondary-text-color)}
+      .history-select{background:var(--card-background-color);border:1px solid var(--divider-color);border-radius:9px;color:var(--primary-text-color);padding:10px 14px;min-width:165px;font:inherit}
       .volume-strip{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:15px 0}
       .volume-strip>div{padding:16px 18px;background:var(--secondary-background-color);border-radius:10px;border:1px solid var(--divider-color)}
       .volume-strip small{display:block;color:var(--secondary-text-color);margin-bottom:8px}
@@ -460,13 +468,18 @@ class HaOracoPanel extends HTMLElement {
       this.fetchHistory(id,"traffic",port,this.chartHours[id+"|"+port]||24);
       if(!this.historyViews[id+"|daily|"+port+"|24|sfp"])this.fetchHistory(id,"daily",port);
     }));
-    this.shadowRoot.querySelectorAll("[data-chart-hours]").forEach(btn=>btn.addEventListener("click",()=>{
-      const id=btn.dataset.switch,port=btn.dataset.port,hours=Number(btn.dataset.chartHours);
+    this.shadowRoot.querySelectorAll("[data-chart-hours-select]").forEach(btn=>btn.addEventListener("change",()=>{
+      const id=btn.dataset.chartHoursSelect,port=btn.dataset.port,hours=Number(btn.value);
       this.chartHours[id+"|"+port]=hours;
       this.fetchHistory(id,"traffic",port,hours);
     }));
     this.shadowRoot.querySelectorAll("[data-daily-switch]").forEach(btn=>btn.addEventListener("click",()=>this.fetchHistory(btn.dataset.dailySwitch,"daily",btn.dataset.dailyPort)));
     this.shadowRoot.querySelectorAll("[data-snapshot-switch]").forEach(btn=>btn.addEventListener("click",()=>this.fetchHistory(btn.dataset.snapshotSwitch,"snapshots","__total__",24,btn.dataset.snapshotKind)));
+    this.shadowRoot.querySelectorAll("[data-history-port]").forEach(el=>el.addEventListener("change",()=>{
+      this.selectedPort[el.dataset.historyPort]=el.value;
+      this.render();
+      this.loadCurrentCharts();
+    }));
     this.shadowRoot.getElementById("refresh")?.addEventListener("click",()=>this.refresh());
     this.shadowRoot.getElementById("mac-filter")?.addEventListener("change",ev=>{this.macFilter=ev.target.value;this.render()});
   }
