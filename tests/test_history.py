@@ -116,9 +116,49 @@ def test_existing_raw_samples_upgrade_to_five_minute_buckets():
         from sqlite3 import connect
         with connect(db.path) as conn:
             conn.execute("DELETE FROM traffic_5m")
+            conn.execute("PRAGMA user_version=0")
         new_db=load().HistoryDatabase(FakeHass(root),"migrating")
         await new_db.initialize()
         history=await new_db.series("1",720)
         assert history and history[-1]["rx"]==6000
+    with TemporaryDirectory() as root:
+        asyncio.run(scenario(root))
+
+def test_restart_restores_recent_baselines_and_avoids_double_counts():
+    async def scenario(root):
+        factory = load().HistoryDatabase
+        first = factory(FakeHass(root), "restart")
+        await first.initialize()
+        await first.record_traffic({"2": {"rx_bps":80, "tx_bps":40,
+                                         "rx_bytes":1000, "tx_bytes":2000}})
+        second = factory(FakeHass(root), "restart")
+        await second.initialize()
+        assert second.previous_counters["2"] == (1000, 2000)
+        await second.record_traffic({"2": {"rx_bps":120, "tx_bps":80,
+                                          "rx_bytes":1300, "tx_bytes":2500}})
+        values = await second.daily_totals("2")
+        assert sum(x["rx_bytes"] for x in values) == 300
+        assert sum(x["tx_bytes"] for x in values) == 500
+        await second.initialize()
+        values2 = await second.daily_totals("2")
+        assert values2 == values
+    with TemporaryDirectory() as root:
+        asyncio.run(scenario(root))
+
+def test_unknown_dates_do_not_replace_known_mac_timestamps():
+    async def scenario(root):
+        db = load().HistoryDatabase(FakeHass(root), "dates")
+        await db.initialize()
+        item={"mac":"00:11:22:33:44:55","vlan":"1","port":"2","vendor":"Example",
+              "classification":"globally_administered",
+              "first_seen":"2026-01-01T00:00:00+00:00",
+              "last_seen":"2026-01-02T00:00:00+00:00"}
+        await db.record_inventory([item])
+        item["first_seen"]=None
+        item["last_seen"]=None
+        await db.record_inventory([item])
+        saved=await db.inventory_summary()
+        assert saved["mac_history_entries"][0]["first_seen"]=="2026-01-01T00:00:00+00:00"
+        assert saved["mac_history_entries"][0]["last_seen"]=="2026-01-02T00:00:00+00:00"
     with TemporaryDirectory() as root:
         asyncio.run(scenario(root))
