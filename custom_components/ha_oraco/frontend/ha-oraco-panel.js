@@ -158,6 +158,22 @@ class HaOracoPanel extends HTMLElement {
         const storm=Object.values(net.storm_control?.ports||{}).sort((a,b)=>Number(a.port)-Number(b.port));
         const status=rows=>rows.length?'':'<p class="empty">Sem dados disponíveis para este recurso.</p>';
         const tbl=(cols,rows)=>'<div class="scroll"><table><thead><tr>'+cols.map(c=>'<th>'+c+'</th>').join('')+'</tr></thead><tbody>'+rows.join('')+'</tbody></table></div>';
+        const global=net.stp_global||{};
+        if(Object.keys(global).length) {
+          const labels={status:"Estado",version:"Protocolo selecionado",priority:"Prioridade da bridge",
+            max_age:"Tempo máximo",hello_time:"Intervalo Hello",forward_delay:"Atraso de encaminhamento",
+            root_priority:"Prioridade da raiz",root_mac:"MAC da raiz",root_path_cost:"Custo até a raiz",
+            root_port:"Porta raiz",root_max_age:"Max Age da raiz",root_hello_time:"Hello da raiz",
+            root_forward_delay:"Forward Delay da raiz"};
+          body+='<section class="card"><h3>STP / RSTP global</h3><p class="section-subtitle">Estado atual: '+(global.enabled?'Ativado':'Desativado')+'</p><div class="detail-grid">'
+            +Object.entries(global).filter(([k])=>k!=="enabled").map(([k,v])=>'<div class="detail-item"><small>'+this.escape(labels[k]||k)+'</small><strong>'+this.escape(v)+'</strong></div>').join('')
+            +'</div></section>';
+        }
+        const aggregate=net.aggregation;
+        if(aggregate) {
+          body+='<section class="card"><h3>Agregação de portas</h3><p class="section-subtitle">'+this.escape(aggregate.count)+' grupo(s) identificado(s)</p>'
+            +(aggregate.groups?.length?tbl(['Grupo','Tipo','Membros','Porta agregada'],aggregate.groups.map(g=>'<tr><td>'+this.escape(g.group)+'</td><td>'+this.escape(g.type)+'</td><td>'+this.escape(g.members)+'</td><td>'+this.escape(g.aggregated_port)+'</td></tr>')):'<p class="empty">Nenhum grupo de agregação configurado.</p>')+'</section>';
+        }
         body+='<section class="card"><h3>Isolamento de portas</h3><p class="section-subtitle">Listas apresentadas pelo firmware; o sentido das restrições ainda requer validação.</p>'+status(iso)
           +(iso.length?tbl(['Porta','Lista informada','Portas listadas'],iso.map(p=>'<tr><td>Porta '+this.escape(p.port)+'</td><td>'+this.escape(p.raw_list)+'</td><td>'+this.escape(p.listed_ports?.join(', '))+'</td></tr>')):'')+'</section>';
         body+='<section class="card"><h3>Spanning Tree — portas</h3><p class="section-subtitle">Estado, função, custo e parâmetros efetivos de STP.</p>'+status(stp)
