@@ -18,6 +18,7 @@ from .advanced import parse_sfp, parse_dhcp, parse_igmp, parse_jumbo
 from .topology import build_topology
 from .vlans import parse_port_vlans
 from .firmware import parse_firmware
+from .protection import parse_isolation, parse_stp_ports, parse_storm_control
 from .panel import register_panel
 
 _LOGGER = logging.getLogger(__name__)
@@ -91,6 +92,9 @@ class HoracoCoordinator(DataUpdateCoordinator[dict]):
                 ("jumbo", 3600, "/fwd.cgi?page=jumboframe", parse_jumbo),
                 ("vlan_ports", INTERVALS["vlans"], "/vlan.cgi?page=port_based", parse_port_vlans),
                 ("firmware_page", INTERVALS["static"], "/fwug.cgi", parse_firmware),
+                ("isolation", 600, "/port.cgi?page=isolation", parse_isolation),
+                ("stp_ports", 600, "/loop.cgi?page=stp_port", parse_stp_ports),
+                ("storm_control", 600, "/fwd.cgi?page=storm_ctrl", parse_storm_control),
             )
             for name, interval, path, parser in plans:
                 if name not in self.last or now - self.last[name] >= interval:
