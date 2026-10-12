@@ -1,5 +1,6 @@
 """Offline IEEE vendor lookup with an optional periodically updated cache."""
 import csv
+import json
 import io
 import re
 import logging
@@ -34,7 +35,7 @@ class VendorCache:
             return "MAC local/privado"
         if kind == "multicast":
             return "Multicast"
-        value = mac.replace(":", "")
+        value = re.sub(r"[^0-9A-Fa-f]", "", mac).upper()
         for size in (9, 7, 6):
             if value[:size] in self.prefixes:
                 return self.prefixes[value[:size]]
@@ -61,6 +62,28 @@ class VendorCache:
                 self.source_status[url.rsplit('/', 1)[-1]] = {'status': 'failed', 'error': type(err).__name__}
                 _LOGGER.warning('HoraInfo IEEE download error %s: %s', url, type(err).__name__)
                 continue
+        # IEEE often returns 403 from cloud networks. Use a documented OUI mirror
+        # as fallback, without claiming the three original sources succeeded.
+        if not found:
+            url = "https://raw.githubusercontent.com/jfisbein/ouidb-json/master/ouidb.json"
+            try:
+                async with session.get(url, timeout=90) as response:
+                    response.raise_for_status()
+                    data = await response.json(content_type=None)
+                fallback = {}
+                for entry in data:
+                    prefix = re.sub(r"[^0-9A-Fa-f]", "", str(entry.get("prefix", ""))).upper()
+                    company = (entry.get("organization") or {}).get("name", "").strip()
+                    if len(prefix) == 6 and company:
+                        fallback[prefix] = company
+                if len(fallback) < 1000:
+                    raise ValueError("OUI fallback dataset unexpectedly small")
+                found = fallback
+                self.source_status["github_oui_mirror"] = {"status":"ok","count":len(found)}
+                self.last_updated = datetime.now(timezone.utc).isoformat()
+            except Exception as err:
+                self.source_status["github_oui_mirror"] = {"status":"failed","error":type(err).__name__}
+                _LOGGER.warning("HoraInfo fallback OUI mirror unavailable: %s", type(err).__name__)
         if found:
             if any(x['status'] != 'ok' for x in self.source_status.values()):
                 found = {**self.prefixes, **found}
