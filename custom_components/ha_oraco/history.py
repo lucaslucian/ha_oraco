@@ -8,6 +8,7 @@ from __future__ import annotations
 import sqlite3
 import json
 import hashlib
+import math
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -132,14 +133,16 @@ class HistoryDatabase:
         for number, port in ports.items():
             number = str(number)
             rx, tx = port.get("rx_bps"), port.get("tx_bps")
-            if not isinstance(rx,(int,float)) or not isinstance(tx,(int,float)):
-                continue
-            if not (0 <= rx < 1e13 and 0 <= tx < 1e13):
-                continue
-            rx_total += rx
-            tx_total += tx
-            raw_rows.append((self.key,timestamp,number,rx,tx))
-            buckets.append((self.key,bucket,number,rx,tx,1,rx,tx))
+            rx_ok = isinstance(rx,(int,float)) and not isinstance(rx,bool) and math.isfinite(rx) and 0 <= rx < 1e13
+            tx_ok = isinstance(tx,(int,float)) and not isinstance(tx,bool) and math.isfinite(tx) and 0 <= tx < 1e13
+            if rx_ok or tx_ok:
+                # Unavailable direction is excluded from its own peak/volume delta.
+                measured_rx = rx if rx_ok else 0
+                measured_tx = tx if tx_ok else 0
+                rx_total += measured_rx
+                tx_total += measured_tx
+                raw_rows.append((self.key,timestamp,number,measured_rx,measured_tx))
+                buckets.append((self.key,bucket,number,measured_rx,measured_tx,1,measured_rx,measured_tx))
             counters = (port.get("rx_bytes"), port.get("tx_bytes"))
             previous = self.previous_counters.get(number)
             previous_stamp = self.previous_stamps.get(number)
