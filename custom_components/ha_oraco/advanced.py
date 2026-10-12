@@ -80,7 +80,13 @@ def parse_sfp(html):
         else:
             out[field] = value
     if not any(k in out for k in ("module_present", "temperature_c", "vendor", "transceiver", "rx_dbm", "tx_dbm", "voltage_v", "current_ma")):
-        raise ValueError("Unsupported SFP diagnostics page")
+        title = soup.title.get_text(" ", strip=True)[:60] if soup.title else "sem título"
+        labels = [re.sub(r"[^a-z0-9]+", "_", k).strip("_") for k in raw.keys()]
+        # Only expose page structure, never response HTML/cookies/credentials.
+        raise ValueError(
+            f"Unexpected SFP page (title={title!r}, rows={len(raw)}, "
+            f"labels={','.join(labels[:8])!r})"
+        )
     return out
 
 def parse_dhcp(html):
