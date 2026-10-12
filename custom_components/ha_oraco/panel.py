@@ -21,7 +21,7 @@ async def dashboard_data(hass, connection, msg):
         switches.append({
             "id": entry_id,
             "host": coordinator.client.host,
-            "name": f"Horaco {coordinator.client.host}",
+            "name": data.get("device", {}).get("name") or data.get("device", {}).get("model") or f"Switch {coordinator.client.host}",
             "device": data.get("device", {}),
             "ports": data.get("ports", {}),
             "sfp": data.get("sfp", {}),
