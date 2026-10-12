@@ -17,6 +17,7 @@ from .vendors import VendorCache
 from .advanced import parse_sfp, parse_dhcp, parse_igmp, parse_jumbo
 from .topology import build_topology
 from .vlans import parse_port_vlans
+from .firmware import parse_firmware
 from .panel import register_panel
 
 _LOGGER = logging.getLogger(__name__)
@@ -36,6 +37,7 @@ class HoracoCoordinator(DataUpdateCoordinator[dict]):
         self.diagnostics = {"endpoints": {}, "last_success": None, "last_error": None}
         self.prev_bytes = {}
         self.prev_time = None
+        self.peak_rates = {"total": {"rx_bps": 0, "tx_bps": 0}, "ports": {}}
 
     async def _async_update_data(self):
         now = monotonic()
@@ -56,6 +58,20 @@ class HoracoCoordinator(DataUpdateCoordinator[dict]):
                             port[f"{side}_bps"] = round(8 * (port[field] - old[field]) / (now - self.prev_time), 2)
                 self.prev_bytes[number] = {key: port[key] for key in ("rx_bytes", "tx_bytes") if key in port}
             self.prev_time = now
+            for number, port in ports.items():
+                peaks = self.peak_rates["ports"].setdefault(number, {"rx_bps": 0, "tx_bps": 0})
+                for direction in ("rx_bps", "tx_bps"):
+                    measured = port.get(direction)
+                    if isinstance(measured, (int, float)) and measured >= 0:
+                        peaks[direction] = max(peaks[direction], measured)
+            for direction in ("rx_bps", "tx_bps"):
+                total = sum(p.get(direction, 0) or 0 for p in ports.values())
+                self.peak_rates["total"][direction] = max(self.peak_rates["total"][direction], total)
+            self.cache["peaks"] = {
+                "total": dict(self.peak_rates["total"]),
+                "ports": {n: dict(values) for n, values in self.peak_rates["ports"].items()},
+                "scope": "since_integration_start",
+            }
             self.cache["ports"] = ports
             self.diagnostics["last_success"] = datetime.now(timezone.utc).isoformat()
             self.diagnostics["last_error"] = None
@@ -74,12 +90,16 @@ class HoracoCoordinator(DataUpdateCoordinator[dict]):
                 ("igmp", 300, "/igmp.cgi?page=dump", parse_igmp),
                 ("jumbo", 3600, "/fwd.cgi?page=jumboframe", parse_jumbo),
                 ("vlan_ports", INTERVALS["vlans"], "/vlan.cgi?page=port_based", parse_port_vlans),
+                ("firmware_page", INTERVALS["static"], "/fwug.cgi", parse_firmware),
             )
             for name, interval, path, parser in plans:
                 if name not in self.last or now - self.last[name] >= interval:
                     try:
                         parsed = parser(await self.client.get(path))
-                        self.cache["sfp" if name == "sfp" else "network"][name] = parsed
+                        if name == "firmware_page":
+                            self.cache["device"]["firmware"] = parsed["version"]
+                        else:
+                            self.cache["sfp" if name == "sfp" else "network"][name] = parsed
                         self.last[name] = now
                         self.diagnostics["endpoints"][name] = {"status": "ok", "last_success": datetime.now(timezone.utc).isoformat()}
                     except Exception as err:
