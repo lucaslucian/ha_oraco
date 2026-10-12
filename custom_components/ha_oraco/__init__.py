@@ -114,13 +114,15 @@ class HoracoCoordinator(DataUpdateCoordinator[dict]):
                     try:
                         parsed = parser(await self.client.get(path))
                         self.cache["sfp" if name == "sfp" else "network"][name] = parsed
+                        if name == "sfp":
+                            self.diagnostics["sfp_fields"] = sorted(parsed)
                         if self.history_db:
                             await self.history_db.record_snapshot(name, parsed)
                         self.last[name] = now
                         self.diagnostics["endpoints"][name] = {"status": "ok", "last_success": datetime.now(timezone.utc).isoformat()}
                     except Exception as err:
                         _LOGGER.debug("%s unavailable on %s: %s", name, self.client.host, err)
-                        self.diagnostics["endpoints"][name] = {"status": "unavailable", "error": type(err).__name__}
+                        self.diagnostics["endpoints"][name] = {"status": "unavailable", "error": type(err).__name__, "detail": str(err)[:180]}
                         self.last[name] = now
             if self.inventory is not None and ("mac" not in self.last or now - self.last["mac"] >= 120):
                 try:
