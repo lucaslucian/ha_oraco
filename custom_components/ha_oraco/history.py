@@ -10,6 +10,7 @@ import json
 import hashlib
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 
 class HistoryDatabase:
@@ -17,6 +18,8 @@ class HistoryDatabase:
         self.hass = hass
         self.path = Path(hass.config.path(".storage", "ha_oraco_history.db"))
         self.key = key
+        self.tz = ZoneInfo(getattr(hass.config, 'time_zone', None) or 'UTC')
+        self.previous_counters = {}
 
     def _connect(self):
         con = sqlite3.connect(self.path, timeout=15)
@@ -34,6 +37,16 @@ class HistoryDatabase:
             db.execute("""CREATE INDEX IF NOT EXISTS idx_traffic_recent
                 ON traffic(switch_id,port,timestamp)""")
             db.execute("CREATE INDEX IF NOT EXISTS idx_traffic_expiry ON traffic(timestamp)")
+            db.execute("""CREATE TABLE IF NOT EXISTS traffic_5m (
+                switch_id TEXT, bucket TEXT, port TEXT, rx_sum REAL, tx_sum REAL,
+                count INTEGER, peak_rx REAL, peak_tx REAL,
+                PRIMARY KEY(switch_id,bucket,port)
+            )""")
+            db.execute("""CREATE TABLE IF NOT EXISTS daily_traffic (
+                switch_id TEXT, day TEXT, port TEXT, rx_bytes INTEGER, tx_bytes INTEGER,
+                PRIMARY KEY(switch_id,day,port)
+            )""")
+            db.execute("CREATE INDEX IF NOT EXISTS idx_5m_expiry ON traffic_5m(bucket)")
             db.execute("""CREATE TABLE IF NOT EXISTS mac_inventory (
                 switch_id TEXT NOT NULL, vlan TEXT NOT NULL, mac TEXT NOT NULL,
                 port TEXT, vendor TEXT, classification TEXT,
@@ -53,26 +66,56 @@ class HistoryDatabase:
         await self.hass.async_add_executor_job(self._initialize)
 
     def _record_traffic(self, ports):
-        stamp = datetime.now(timezone.utc).isoformat()
-        values = []
-        total_rx = total_tx = 0.0
-        for number, p in ports.items():
-            rx, tx = p.get("rx_bps"), p.get("tx_bps")
-            if not isinstance(rx, (int, float)) or not isinstance(tx, (int, float)):
+        stamp = datetime.now(timezone.utc)
+        timestamp = stamp.isoformat()
+        bucket = stamp.replace(minute=stamp.minute // 5 * 5, second=0, microsecond=0).isoformat()
+        day = stamp.astimezone(self.tz).date().isoformat()
+        raw_rows = []
+        buckets = []
+        daily = []
+        rx_total = tx_total = 0.0
+        bytes_rx = bytes_tx = 0
+        for number, port in ports.items():
+            number = str(number)
+            rx, tx = port.get("rx_bps"), port.get("tx_bps")
+            if not isinstance(rx,(int,float)) or not isinstance(tx,(int,float)):
                 continue
             if not (0 <= rx < 1e13 and 0 <= tx < 1e13):
                 continue
-            values.append((self.key, stamp, str(number), rx, tx))
-            total_rx += rx
-            total_tx += tx
-        if not values:
+            rx_total += rx
+            tx_total += tx
+            raw_rows.append((self.key,timestamp,number,rx,tx))
+            buckets.append((self.key,bucket,number,rx,tx,1,rx,tx))
+            counters = (port.get("rx_bytes"), port.get("tx_bytes"))
+            previous = self.previous_counters.get(number)
+            if all(isinstance(x,int) for x in counters):
+                if previous and all(new >= old for new,old in zip(counters,previous)):
+                    drx = counters[0]-previous[0]
+                    dtx = counters[1]-previous[1]
+                    daily.append((self.key,day,number,drx,dtx))
+                    bytes_rx += drx
+                    bytes_tx += dtx
+                self.previous_counters[number] = counters
+        if not raw_rows:
             return
-        values.append((self.key, stamp, "__total__", total_rx, total_tx))
-        cutoff = (datetime.now(timezone.utc) - timedelta(days=14)).isoformat()
+        raw_rows.append((self.key,timestamp,"__total__",rx_total,tx_total))
+        buckets.append((self.key,bucket,"__total__",rx_total,tx_total,1,rx_total,tx_total))
+        if daily:
+            daily.append((self.key,day,"__total__",bytes_rx,bytes_tx))
         with self._connect() as db:
-            db.executemany("""INSERT OR REPLACE INTO traffic
-                (switch_id,timestamp,port,rx_bps,tx_bps) VALUES (?,?,?,?,?)""", values)
-            db.execute("DELETE FROM traffic WHERE timestamp < ?", (cutoff,))
+            db.executemany("INSERT OR REPLACE INTO traffic VALUES(?,?,?,?,?)",raw_rows)
+            db.executemany("""INSERT INTO traffic_5m VALUES(?,?,?,?,?,?,?,?)
+                ON CONFLICT(switch_id,bucket,port) DO UPDATE SET
+                rx_sum=rx_sum+excluded.rx_sum,tx_sum=tx_sum+excluded.tx_sum,
+                count=count+1,peak_rx=MAX(peak_rx,excluded.peak_rx),
+                peak_tx=MAX(peak_tx,excluded.peak_tx)""",buckets)
+            if daily:
+                db.executemany("""INSERT INTO daily_traffic VALUES(?,?,?,?,?)
+                    ON CONFLICT(switch_id,day,port) DO UPDATE SET
+                    rx_bytes=rx_bytes+excluded.rx_bytes,
+                    tx_bytes=tx_bytes+excluded.tx_bytes""",daily)
+            db.execute("DELETE FROM traffic WHERE timestamp < ?",((stamp-timedelta(days=2)).isoformat(),))
+            db.execute("DELETE FROM traffic_5m WHERE bucket < ?",((stamp-timedelta(days=30)).isoformat(),))
 
     async def record_traffic(self, ports):
         await self.hass.async_add_executor_job(self._record_traffic, ports)
