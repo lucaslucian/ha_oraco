@@ -191,7 +191,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             coordinator.cache["traffic_history"] = previous["traffic_history"]
         except Exception as err:
             _LOGGER.warning("HoraInfo history restore error: %s", type(err).__name__)
-    coordinator.cache["mac"] = coordinator.inventory.summary()
+    if not coordinator.cache["mac"]:
+        coordinator.cache["mac"] = coordinator.inventory.summary()
     await coordinator.async_config_entry_first_refresh()
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
     entry.async_on_unload(entry.add_update_listener(_reload))
