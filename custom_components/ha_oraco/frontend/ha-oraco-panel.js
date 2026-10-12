@@ -246,11 +246,14 @@ class HaOracoPanel extends HTMLElement {
           '<text x="545" y="'+(mid+5)+'" font-size="12" fill="#879bad">Nenhum MAC aprendido</text>');
       } else row.devices.forEach((device,index)=>{
         const cy=y+index*lineHeight+14;
-        const mac=device.mac||device.label||device.id||"Dispositivo";
+        const mac=device.mac||device.id||"Dispositivo";
+        const vendor=device.vendor && !["Desconhecido","MAC local/privado","Multicast"].includes(device.vendor)?device.vendor:null;
+        const friendly=device.name||((device.label&&device.label!==mac)?device.label:null)||vendor;
+        const mainLabel=friendly?friendly+" · "+mac:mac;
         parts.push('<path d="M465 '+mid+' H497 V'+cy+' H535" stroke="'+status+'" stroke-width="1.4" fill="none"/>',
           '<rect x="535" y="'+(cy-16)+'" width="444" height="34" rx="8" fill="#14283b" stroke="#375972"/>',
           '<circle cx="550" cy="'+cy+'" r="4" fill="#45a7d7"/>',
-          '<text x="563" y="'+(cy+4)+'" font-size="12" fill="#e5f3ff">'+this.escape(mac)+'</text>');
+          '<text x="563" y="'+(cy+4)+'" font-size="12" fill="#e5f3ff">'+this.escape(mainLabel)+'</text>');
       });
       y+=length*lineHeight+gap;
     }
