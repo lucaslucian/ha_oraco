@@ -32,12 +32,61 @@ class HaOracoPanel extends HTMLElement {
     } catch (err) { this.error = String(err); }
     finally { this.busy = false; this.render(); }
   }
+
+  sfpLabel(key) {
+    const names={temperature_c:"Temperatura",voltage_v:"Tensão",current_ma:"Corrente do laser",
+      rx_dbm:"Potência recebida (RX)",tx_dbm:"Potência transmitida (TX)",
+      vendor:"Fabricante",vendorname:"Fabricante",vendor_name:"Fabricante",
+      part_number:"Modelo",partnumber:"Modelo",serial_number:"Número de série",
+      serialnumber:"Número de série",wavelength_nm:"Comprimento de onda",
+      wavelength:"Comprimento de onda",connector:"Conector",revision:"Revisão",
+      rxpower:"RX bruto",txpower:"TX bruto",temp:"Temperatura bruta",
+      voltage:"Tensão bruta",current:"Corrente bruta",distance:"Alcance"};
+    return names[key]||key.replace(/_/g," ").replace(/^./,c=>c.toUpperCase());
+  }
+  sfpValue(key,value) {
+    if(value===null||value===undefined||value==="")return "Indisponível";
+    const units={temperature_c:[" °C",1],voltage_v:[" V",2],current_ma:[" mA",2],
+      rx_dbm:[" dBm",2],tx_dbm:[" dBm",2],wavelength_nm:[" nm",0]};
+    if(units[key]&&Number.isFinite(Number(value)))return Number(value).toLocaleString("pt-BR",
+      {minimumFractionDigits:units[key][1],maximumFractionDigits:units[key][1]})+units[key][0];
+    return this.escape(value);
+  }
+  renderSfp(sw,compact=false) {
+    const raw=sw.sfp?.sfp||{};
+    if(!Object.keys(raw).length)return '<p class="empty">Nenhuma informação óptica disponível.</p>';
+    const readings=["rx_dbm","tx_dbm","temperature_c","voltage_v","current_ma"];
+    const fields=readings.slice(0,compact?4:5).map(k=>'<div class="optical-item"><small>'
+      +this.escape(this.sfpLabel(k))+'</small><strong>'+this.escape(this.sfpValue(k,raw[k]))+'</strong></div>').join("");
+    const extra=compact?"":Object.entries(raw)
+      .filter(([k])=>!readings.includes(k)&&!["temp","voltage","current","rxpower","txpower"].includes(k))
+      .map(([k,v])=>'<div class="detail-item"><small>'+this.escape(this.sfpLabel(k))
+      +'</small><strong>'+this.escape(v)+'</strong></div>').join("");
+    return '<div class="optical-grid">'+fields+'</div>'+(extra?'<h4>Identificação do transceptor</h4><div class="detail-grid">'+extra+'</div>':"");
+  }
+  portFace(ports) {
+    if(!ports.length)return '<p class="empty">Nenhuma interface identificada.</p>';
+    return '<div class="switch-face"><div class="face-title"><span class="face-led"></span> INTERFACES MONITORADAS <span>'
+      +ports.length+' PORTAS</span></div><div class="jack-grid">'
+      +[...ports].sort((a,b)=>Number(a.port)-Number(b.port)).map(p=>
+        '<div class="jack-port '+(p.up?"linked":"")+'" title="Porta '+this.escape(p.port)+'">'
+        +'<b>'+this.escape(p.port)+'</b><div class="rj45"><div class="rj45-notch"></div></div>'
+        +'<i class="jack-led"></i><small>'+this.escape(p.speed||"—")+'</small></div>').join("")
+      +'</div><div class="face-legend"><span>● Verde: conectada</span><span>● Cinza: desconectada</span>'
+      +'<span>Representação lógica; disposição física depende do modelo</span></div></div>';
+  }
   trafficChart(id) {
-    const samples = this.samples[id] || [];
-    if(samples.length<2) return '<p>Gráfico disponível após duas coletas.</p>';
-    const peak = Math.max(1,...samples.flatMap(x=>[x.rx,x.tx]));
-    const points = key=>samples.map((p,i)=>((i*600)/(samples.length-1)).toFixed(1)+','+(125-p[key]/peak*110).toFixed(1)).join(' ');
-    return '<svg viewBox="0 0 600 140" class="traffic-chart" role="img" aria-label="Histórico de tráfego RX e TX"><polyline points="'+points('rx')+'" stroke="var(--primary-color)" fill="none" stroke-width="2.5"/><polyline points="'+points('tx')+'" stroke="var(--success-color,#4caf50)" fill="none" stroke-width="2.5"/></svg><small>RX azul · TX verde · dados desta sessão</small>';
+    const samples=this.samples[id]||[];
+    if(samples.length<2)return '<p class="empty">Aguardando duas amostras para iniciar o gráfico.</p>';
+    const peak=Math.max(1,...samples.flatMap(v=>[v.rx,v.tx]));
+    const points=key=>samples.map((v,i)=>((i*740)/Math.max(1,samples.length-1)+30).toFixed(1)
+      +','+(159-v[key]/peak*134).toFixed(1)).join(' ');
+    const grid=[26,70,115,159].map(y=>'<line x1="30" x2="770" y1="'+y+'" y2="'+y+'" stroke="currentColor" opacity=".12" stroke-dasharray="4 5"/>').join("");
+    return '<svg class="traffic-chart" viewBox="0 0 800 185" role="img" aria-label="Tráfego RX e TX">'
+      +grid+'<polyline points="'+points("rx")+'" fill="none" stroke="#29ade3" stroke-width="2.7" stroke-linejoin="round"/>'
+      +'<polyline points="'+points("tx")+'" fill="none" stroke="#49bf87" stroke-width="2.7" stroke-linejoin="round"/></svg>'
+      +'<div class="chart-legend"><span>● RX — azul</span><span>● TX — verde</span><span>'
+      +samples.length+' amostras desta sessão</span></div>';
   }
   escape(v) {
     return String(v ?? "—").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -58,10 +107,10 @@ class HaOracoPanel extends HTMLElement {
       if (this.tab === "overview") {
         body += '<div class="stats"><section class="card metric"><small>Portas ativas</small><strong>'+online+' / '+ps.length+'</strong></section><section class="card metric"><small>Tráfego RX</small><strong>'+fmt(rate("rx"))+'</strong></section><section class="card metric"><small>Tráfego TX</small><strong>'+fmt(rate("tx"))+'</strong></section><section class="card metric"><small>Firmware</small><strong class="small">'+this.escape(sw.device?.firmware)+'</strong></section></div>';
         body += '<section class="card"><h3>Tráfego ao vivo</h3>'+this.trafficChart(sw.id)+'</section>';
-        body += '<section class="card"><h3>Interfaces</h3><div class="port-grid">'+ps.map(p=>'<div class="port '+(p.up?"active":"")+'"><b>'+this.escape(p.port)+'</b><span>'+this.escape(p.speed)+'</span></div>').join("")+'</div></section>';
-        body += '<div class="columns"><section class="card"><h3>Portas e tráfego</h3>'+table(ps.slice(0,12))+'</section><section class="card"><h3>Diagnóstico SFP+</h3><div class="kv"><span>Temperatura</span><b>'+this.escape(sw.sfp?.sfp?.temperature_c)+' °C</b></div><div class="kv"><span>RX óptico</span><b>'+this.escape(sw.sfp?.sfp?.rx_dbm)+' dBm</b></div><div class="kv"><span>TX óptico</span><b>'+this.escape(sw.sfp?.sfp?.tx_dbm)+' dBm</b></div><h3>Inventário MAC</h3><p>'+this.escape(sw.mac?.mac_current ?? "—")+' MACs atuais · '+this.escape(sw.mac?.mac_known ?? "—")+' conhecidos</p></section></div>';
-      } else if(this.tab === "ports") body += '<section class="card"><h3>Portas e utilização</h3>'+table(ps)+'</section>';
-      else if(this.tab === "sfp") body += '<section class="card"><h3>Diagnóstico óptico</h3>'+Object.entries(sw.sfp?.sfp||{}).map(([k,v])=>'<div class="kv"><span>'+this.escape(k)+'</span><b>'+this.escape(v)+'</b></div>').join("")+'</section>';
+        body += '<section class="card"><h3>Visão das interfaces</h3><p class="section-subtitle">Estado das portas e velocidade negociada</p>'+this.portFace(ps)+'</section>';
+        body += '<div class="columns"><section class="card"><h3>Portas e tráfego</h3>'+table(ps.slice(0,12))+'</section><section class="card"><h3>Diagnóstico SFP+</h3>'+this.renderSfp(sw,true)+'<h3 class="spaced">Inventário MAC</h3><p>'+this.escape(sw.mac?.mac_current ?? "—")+' MACs atuais · '+this.escape(sw.mac?.mac_known ?? "—")+' conhecidos</p></section></div>';
+      } else if(this.tab === "ports") body += '<section class="card"><h3>Visão das interfaces</h3>'+this.portFace(ps)+'</section><section class="card"><h3>Portas e utilização</h3>'+table(ps)+'</section>';
+      else if(this.tab === "sfp") body += '<section class="card"><h3>Transceptor óptico</h3><p class="section-subtitle">Medições e dados de identificação disponíveis no firmware</p>'+this.renderSfp(sw)+'</section>';
       else if(this.tab === "mac") body += '<section class="card"><h3>MACs observados · '+this.escape(sw.mac?.mac_current ?? "—")+'</h3><p>Mostrando até 25 MACs atuais; filtros aplicados localmente. Histórico preservado na integração.</p><input id="mac-filter" type="search" placeholder="Pesquisar MAC, porta, VLAN ou fabricante" value="'+this.escape(this.macFilter)+'" aria-label="Filtrar endereços MAC"><div class="scroll"><table><thead><tr><th>MAC</th><th>Porta</th><th>VLAN</th><th>Fabricante / classificação</th></tr></thead><tbody>'+(sw.mac?.mac_entries||[]).filter(e=>JSON.stringify(e).toLowerCase().includes(this.macFilter.toLowerCase())).map(e=>'<tr><td>'+this.escape(e.mac)+'</td><td>'+this.escape(e.port)+'</td><td>'+this.escape(e.vlan)+'</td><td>'+this.escape(e.vendor || e.classification)+'</td></tr>').join("")+'</tbody></table></div></section>';
       else if(this.tab === "topology") body += '<section class="card"><h3>Mapa lógico por porta</h3><p>Relações baseadas na tabela MAC aprendida. Dispositivos atrás de APs ou switches não gerenciados podem aparecer conectados à mesma porta, sem confirmar ligação física direta.</p>'+ps.map(p=>'<div class="kv"><span>Porta '+this.escape(p.port)+'</span><b>'+this.escape((sw.topology?.edges||[]).filter(e=>e.from==="port:"+p.port).length)+' MAC(s) observado(s)</b></div>').join("")+'<div class="port-grid">'+(sw.topology?.nodes||[]).filter(n=>n.kind==="learned_mac").slice(0,100).map(n=>'<div class="port"><b>'+this.escape(n.label)+'</b><span>'+this.escape(n.vlan ? "VLAN "+n.vlan : "Sem VLAN")+'</span></div>').join("")+'</div></section>';
       else if(this.tab === "system") body += '<section class="card"><h3>Informações do equipamento</h3>'+Object.entries(sw.device||{}).map(([k,v])=>'<div class="kv"><span>'+this.escape(k)+'</span><b>'+this.escape(v)+'</b></div>').join("")+'<h3>Saúde dos endpoints</h3>'+Object.entries(sw.diagnostics?.endpoints||{}).map(([k,v])=>'<div class="kv"><span>'+this.escape(k)+'</span><b>'+this.escape(v.status)+'</b></div>').join("")+'</section>';
@@ -84,6 +133,26 @@ class HaOracoPanel extends HTMLElement {
       .traffic-chart{display:block;width:100%;height:auto;max-height:200px} table{border-collapse:collapse;width:100%;font-size:13px;text-align:left}th,td{padding:12px 10px;border-bottom:1px solid var(--divider-color);white-space:nowrap}th{font-weight:500;color:var(--secondary-text-color)}
       .dot{display:inline-block;width:8px;height:8px;background:var(--disabled-text-color);border-radius:50%;margin-right:8px}.dot.ok{background:var(--success-color,#4caf50)}
       input[type=search]{width:100%;padding:12px 14px;border:1px solid var(--divider-color);border-radius:8px;background:var(--secondary-background-color);color:var(--primary-text-color);margin-bottom:12px} .kv{display:flex;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--divider-color);gap:15px}.kv span{color:var(--secondary-text-color)}
+
+      .section-subtitle{font-size:12px;color:var(--secondary-text-color);margin:-8px 0 18px}
+      .switch-face{background:var(--secondary-background-color);border:1px solid var(--divider-color);border-radius:12px;padding:19px}
+      .face-title{display:flex;gap:10px;align-items:center;font-size:10px;letter-spacing:1px;color:var(--secondary-text-color);font-weight:600;margin-bottom:18px}
+      .face-title>span:last-child{margin-left:auto}.face-led{width:8px;height:8px;border-radius:50%;background:#49bf87}
+      .jack-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(76px,1fr));gap:11px}
+      .jack-port{min-height:108px;border:1px solid var(--divider-color);border-radius:10px;background:var(--card-background-color);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px}
+      .jack-port>b{font-size:12px}.jack-port>small{font-size:10px;color:var(--secondary-text-color)}
+      .rj45{height:29px;width:38px;border:2px solid #607080;border-radius:5px;background:#101923;display:grid;place-items:center}
+      .rj45-notch{width:22px;height:18px;border:2px solid #607080;border-top:0}
+      .jack-port.linked .rj45{border-color:#49bf87}.jack-led{width:7px;height:7px;border-radius:50%;background:var(--disabled-text-color)}
+      .jack-port.linked .jack-led{background:#49bf87;box-shadow:0 0 0 3px rgba(73,191,135,.13)}
+      .face-legend{display:flex;flex-wrap:wrap;gap:14px;margin-top:16px;font-size:11px;color:var(--secondary-text-color)}
+      .optical-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px;margin:17px 0}
+      .optical-item,.detail-item{background:var(--secondary-background-color);border:1px solid var(--divider-color);border-radius:10px;padding:14px;min-width:0}
+      .optical-item small,.detail-item small{display:block;color:var(--secondary-text-color);font-size:11px;margin-bottom:10px}
+      .optical-item strong{font-size:17px;font-weight:600;overflow-wrap:anywhere}.detail-item strong{font-size:13px;overflow-wrap:anywhere}
+      .detail-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px}.spaced{margin-top:22px}
+      .chart-legend{display:flex;gap:17px;flex-wrap:wrap;font-size:11px;color:var(--secondary-text-color);margin:3px 0 0 22px}
+      .traffic-chart{max-height:190px}.card{border-radius:14px}.metric{min-width:0}.metric strong{overflow-wrap:anywhere}
       @media(max-width:950px){.stats{grid-template-columns:repeat(2,minmax(0,1fr))}.columns{grid-template-columns:1fr}}@media(max-width:500px){main{padding:14px}.stats{gap:8px}.card{padding:14px}.metric strong{font-size:20px}}
     </style><main><header><h1 class="brand"><img src="/ha_oraco_static/brand/icon.svg" alt="" aria-hidden="true"/> HoraInfo</h1><button class="refresh" id="refresh">Atualizar</button></header>
     <nav>${tabs.map(([id,label])=>'<button data-tab="'+id+'" class="'+(id===this.tab?"selected":"")+'">'+label+'</button>').join("")}</nav>
