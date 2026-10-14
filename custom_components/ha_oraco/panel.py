@@ -6,6 +6,7 @@ from homeassistant.components import frontend, websocket_api
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.core import callback
 from .const import DOMAIN
+from .dashboard_preferences import DashboardPreferences
 
 PANEL_URL = "/ha_oraco_static/ha-oraco-panel.js"
 
@@ -20,6 +21,7 @@ async def dashboard_data(hass, connection, msg):
         data = coordinator.data or {}
         switches.append({
             "id": entry_id,
+            "preferences": hass.data[DOMAIN]["_dashboard_preferences"].for_switch(entry_id),
             "host": coordinator.client.host,
             "name": data.get("device", {}).get("name") or data.get("device", {}).get("model") or f"Switch {coordinator.client.host}",
             "device": data.get("device", {}),
@@ -75,10 +77,36 @@ async def history_data(hass, connection, msg):
     else:
         connection.send_result(msg["id"],{"items":result})
 
+@websocket_api.websocket_command({
+    vol.Required("type"): "ha_oraco/preference",
+    vol.Required("entry_id"): str,
+    vol.Required("category"): vol.In(["ports","devices","layout","options"]),
+    vol.Required("key"): str,
+    vol.Required("value"): object,
+})
+@websocket_api.require_admin
+@websocket_api.async_response
+async def save_preference(hass,connection,msg):
+    entry_id=msg["entry_id"]
+    coordinator=hass.data.get(DOMAIN,{}).get(entry_id)
+    if not hasattr(coordinator,"client"):
+        connection.send_error(msg["id"],"not_found","Unknown switch")
+        return
+    preferences=hass.data[DOMAIN]["_dashboard_preferences"]
+    try:
+        await preferences.set_item(entry_id,msg["category"],msg["key"],msg["value"])
+    except (ValueError,TypeError) as err:
+        connection.send_error(msg["id"],"invalid_format",str(err))
+        return
+    connection.send_result(msg["id"],{"saved":True})
+
 async def register_panel(hass):
     """Serve frontend file and register one native-looking custom sidebar panel."""
     if hass.data.setdefault(DOMAIN, {}).get("_panel_registered"):
         return
+    preferences=DashboardPreferences(hass)
+    await preferences.load()
+    hass.data[DOMAIN]["_dashboard_preferences"]=preferences
     static_file = Path(__file__).parent / "frontend" / "ha-oraco-panel.js"
     await hass.http.async_register_static_paths(
         [StaticPathConfig(PANEL_URL, str(static_file), False),
@@ -86,6 +114,7 @@ async def register_panel(hass):
     )
     websocket_api.async_register_command(hass, dashboard_data)
     websocket_api.async_register_command(hass, history_data)
+    websocket_api.async_register_command(hass, save_preference)
     frontend.async_register_built_in_panel(
         hass, "custom",
         sidebar_title="HoraInfo",
