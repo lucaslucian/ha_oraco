@@ -259,9 +259,10 @@ class HaOracoPanel extends HTMLElement {
     this.historyViews[key]={loading:true};
     this.render();
     try {
-      const result=await this._hass.connection.sendMessagePromise({
-        type:"ha_oraco/history",entry_id:switchId,mode,port,hours,kind,metric:kind
-      });
+      const request={type:"ha_oraco/history",entry_id:switchId,mode,port,hours};
+      if(mode==="snapshots")request.kind=kind;
+      if(mode==="sfp_optical")request.metric=kind;
+      const result=await this._hass.connection.sendMessagePromise(request);
       this.historyViews[key]={...result,items:result.items||[],loading:false};
     } catch(error) {
       this.historyViews[key]={loading:false,error:String(error),items:[]};
