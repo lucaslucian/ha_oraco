@@ -395,6 +395,7 @@ class HaOracoPanel extends HTMLElement {
         body=unique.length?
           '<div class="audit-layout"><div class="audit-days">'+list+'</div><section class="audit-content"><h3>'+this.escape(current.split('-').reverse().join('/'))+'</h3><p class="section-subtitle">'+checks+' verificações · '+changes+' alterações</p>'+
           (selected[0]?.checked_at?'<p class="muted">Última análise: '+this.escape(new Date(selected[0].checked_at).toLocaleString('pt-BR'))+'</p>':'')+
+          (selected.some(d=>d.events_limited)?'<p class="muted">A visualização carrega somente os 180 eventos mais recentes desta categoria. As contagens diárias abrangem todos os eventos registrados no período de retenção.</p>':'')+
           (details||'<p class="muted">Nenhuma alteração neste dia. O último estado conhecido foi mantido.</p>')+'</section></div>':
           '<p class="muted">Nenhum histórico disponível nos últimos 90 dias.</p>';
       }
