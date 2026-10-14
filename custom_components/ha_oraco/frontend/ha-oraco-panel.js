@@ -181,12 +181,41 @@ class HaOracoPanel extends HTMLElement {
     }
     return '<section class="card"><h3>Histórico de temperatura</h3><div class="history-controls">'+select+'</div>'+content+'</section>';
   }
+  defaultRange(sw) {
+    return this.pref(sw,"options","default_hours",24);
+  }
+  async setOpticalLimits(sw,metric) {
+    const existing=this.pref(sw,"thresholds",metric,null);
+    const low=prompt("Limite mínimo personalizado para "+this.sfpLabel(metric)+". Vazio remove os limites:",existing?.low??"");
+    if(low===null)return;
+    if(low.trim()===""){await this.savePreference(sw,"thresholds",metric,null);return;}
+    const high=prompt("Limite máximo personalizado para "+this.sfpLabel(metric)+":",existing?.high??"");
+    if(high===null)return;
+    const a=Number(low.replace(",",".")),b=Number(high.replace(",","."));
+    if(!Number.isFinite(a)||!Number.isFinite(b)||a>=b||Math.abs(a)>1000||Math.abs(b)>1000){
+      this.error="Limites inválidos: informe números finitos, com mínimo menor que máximo.";this.render();return;
+    }
+    await this.savePreference(sw,"thresholds",metric,{low:a,high:b});
+  }
   renderSfp(sw,compact=false) {
     const raw=sw.sfp?.sfp||{};
     if(!Object.keys(raw).length)return '<p class="empty">Diagnóstico SFP+ indisponível nesta coleta. Consulte Sistema → Saúde das consultas para identificar o erro. Não é possível concluir que o módulo está desconectado.</p>';
     const readings=["rx_dbm","tx_dbm","temperature_c","voltage_v","current_ma"];
-    const fields=readings.slice(0,compact?4:5).map(k=>'<div class="optical-item"><small>'
-      +this.escape(this.sfpLabel(k))+'</small><strong>'+this.escape(this.sfpValue(k,raw[k]))+'</strong></div>').join("");
+    const fields=readings.slice(0,compact?4:5).map(k=>{
+      const limits=this.pref(sw,"thresholds",k,null);
+      const value=Number(raw[k]);
+      const valid=raw[k]!==null&&raw[k]!==undefined&&raw[k]!==""&&Number.isFinite(value);
+      const range=limits?(limits.high-limits.low):null;
+      const percent=limits&&valid?Math.max(0,Math.min(100,100*(value-limits.low)/range)):0;
+      const outside=limits&&valid&&(value<limits.low||value>limits.high);
+      const gauge=limits&&valid?'<div class="optical-gauge" title="Posição entre limites personalizados"><span style="width:'+percent+'%;background:'+(outside?'#e0a15b':'#42a7c8')+'"></span></div>':'';
+      return '<div class="optical-item"><small>'+this.escape(this.sfpLabel(k))+'</small>'+
+        '<strong>'+this.escape(this.sfpValue(k,raw[k]))+'</strong>'+
+        (outside?'<small class="threshold-warning">Fora dos limites personalizados</small>':'')+gauge+
+        (limits?'<small>'+this.escape(limits.low)+' – '+this.escape(limits.high)+'</small>':'')+
+        (!compact?'<button class="threshold-edit" data-sfp-limit-switch="'+this.escape(sw.id)+'" data-sfp-limit-metric="'+k+'">Configurar limites</button>':'')+
+        '</div>';
+    }).join("");
     const extra=compact?"":Object.entries(raw)
       .filter(([k])=>!readings.includes(k)&&!["temp","voltage","current","rxpower","txpower"].includes(k))
       .map(([k,v])=>'<div class="detail-item"><small>'+this.escape(this.sfpLabel(k))
@@ -618,6 +647,9 @@ class HaOracoPanel extends HTMLElement {
       .metric small{display:block;font-size:12px;margin-bottom:11px;color:var(--secondary-text-color)}
       .metric strong{font-size:clamp(21px,2vw,28px);font-weight:650;letter-spacing:-.5px}
       .metric strong.small{font-size:16px;line-height:1.5}
+      .optical-gauge{height:5px;background:var(--divider-color);border-radius:4px;overflow:hidden;margin-top:8px}
+      .optical-gauge span{display:block;height:100%;border-radius:4px}
+      .threshold-warning{color:#df965a!important}.threshold-edit{font-size:11px;padding:6px 0;border:0;color:var(--primary-color)}
       .snapshot-diff{display:grid;gap:3px;min-width:0}
       .diff-header,.diff-row{display:grid;grid-template-columns:minmax(130px,1.3fr) repeat(2,minmax(100px,1fr));align-items:start;gap:8px;padding:8px;border-bottom:1px solid var(--divider-color);font-size:12px}
       .diff-header{font-weight:600;color:var(--secondary-text-color)}.diff-row>*{overflow-wrap:anywhere}
@@ -775,6 +807,10 @@ class HaOracoPanel extends HTMLElement {
       if(!sw)return;
       const layout=sw.preferences?.layout||{};
       for(const [key] of Object.entries(layout))await this.savePreference(sw,"layout",key,null);
+    }));
+    this.shadowRoot.querySelectorAll("[data-sfp-limit-switch]").forEach(btn=>btn.addEventListener("click",()=>{
+      const sw=(this.data?.switches||[]).find(x=>x.id===btn.dataset.sfpLimitSwitch);
+      if(sw)this.setOpticalLimits(sw,btn.dataset.sfpLimitMetric);
     }));
     this.shadowRoot.querySelectorAll("[data-open-port]").forEach(el=>el.addEventListener("click",()=>{
       this.portModal={switchId:el.dataset.openPort,number:el.dataset.portNumber};this.render();
