@@ -1,5 +1,6 @@
 """Persist dashboard annotations independently of switch observations."""
 import re
+import math
 from homeassistant.helpers.storage import Store
 
 class DashboardPreferences:
@@ -15,7 +16,7 @@ class DashboardPreferences:
         return self.data.get(entry_id,{})
 
     async def set_item(self,entry_id,category,key,value):
-        if category not in ("ports","devices","layout","options"):
+        if category not in ("ports","devices","layout","options","thresholds"):
             raise ValueError("Invalid preference category")
         if not isinstance(key,str) or not 1<=len(key)<=128:
             raise ValueError("Invalid preference key")
@@ -25,6 +26,13 @@ class DashboardPreferences:
             raise ValueError("Invalid MAC")
         if category=="layout" and not re.fullmatch(r"(?:mac:[0-9A-Fa-f:]{17}|port:\d{1,4})",key):
             raise ValueError("Invalid node")
+        if category=="thresholds" and key not in ("temperature_c","voltage_v","current_ma","rx_dbm","tx_dbm"):
+            raise ValueError("Invalid optical metric")
+        if category=="thresholds" and value is not None:
+            if not isinstance(value,dict) or set(value)!={"low","high"} or any(
+                type(v) not in (int,float) or not math.isfinite(v) or abs(v)>1000 for v in value.values()
+            ) or value["low"]>=value["high"]:
+                raise ValueError("Invalid optical limits")
         if category=="options" and key not in ("default_hours","compact"):
             raise ValueError("Invalid option")
         if category=="layout" and value is not None:
@@ -35,7 +43,7 @@ class DashboardPreferences:
                 raise ValueError("Invalid compact")
             if key=="default_hours" and value not in (1,6,12,24,72,120,168,360,720):
                 raise ValueError("Invalid range")
-        elif not isinstance(value,str) or len(value)>80:
+        elif category not in ("thresholds","layout") and (not isinstance(value,str) or len(value)>80):
             raise ValueError("Invalid label")
         item=self.data.setdefault(entry_id,{}).setdefault(category,{})
         if value=="" or value is None:
