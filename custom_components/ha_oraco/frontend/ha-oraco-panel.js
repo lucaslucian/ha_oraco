@@ -455,7 +455,11 @@ class HaOracoPanel extends HTMLElement {
       else if(this.tab === "mac") {
         const macData=sw.mac||{};
         const macRows=macData.mac_history_entries||macData.mac_entries||[];
-        const matches=macRows.filter(e=>JSON.stringify(e).toLowerCase().includes(this.macFilter.toLowerCase()));
+        const matches=macRows.filter(e=>(this.devicePortFilter==="all"||String(e.port)===this.devicePortFilter)&&
+          (this.deviceVlanFilter==="all"||String(e.vlan)===this.deviceVlanFilter)&&
+          (this.deviceVendorFilter==="all"||(e.vendor||"Desconhecido")===this.deviceVendorFilter)&&
+          (JSON.stringify(e).toLowerCase().includes(this.macFilter.toLowerCase())||
+          this.pref(sw,"devices",e.mac,"").toLowerCase().includes(this.macFilter.toLowerCase())));
         const stamp=v=>{if(!v)return '—';const d=new Date(v);return Number.isFinite(d.getTime())?d.toLocaleString('pt-BR'):this.escape(v);};
         const count=sw.oui?.prefix_count||0;
         body+='<section class="card"><h3>Inventário e histórico de dispositivos</h3>'
@@ -464,9 +468,12 @@ class HaOracoPanel extends HTMLElement {
           +'<div><small>Fabricantes identificados</small><strong>'+this.escape(macData.mac_vendor_matched??0)+'</strong></div>'
           +'<div><small>Base IEEE</small><strong>'+this.escape(count?count.toLocaleString('pt-BR')+' prefixos':'Não carregada')+'</strong></div></div>'
           +'<p class="section-subtitle">Histórico persistente: primeira e última observação, porta, VLAN e fabricante. OUI atualizado: '+stamp(sw.oui?.last_updated)+'</p>'
-          +'<input id="mac-filter" type="search" placeholder="Pesquisar MAC, porta, VLAN ou fabricante" value="'+this.escape(this.macFilter)+'" aria-label="Pesquisar inventário">'
-          +'<div class="scroll"><table><thead><tr><th>MAC</th><th>Porta</th><th>VLAN</th><th>Fabricante / classificação</th><th>Primeira observação</th><th>Última observação</th></tr></thead><tbody>'
-          +matches.map(e=>'<tr><td>'+this.escape(e.mac)+'</td><td>'+this.escape(e.port)+'</td><td>'+this.escape(e.vlan)+'</td><td>'+this.escape(e.vendor||e.classification)+'</td><td>'+stamp(e.first_seen)+'</td><td>'+stamp(e.last_seen)+'</td></tr>').join('')
+          +'<div class="inventory-filters"><input id="mac-filter" type="search" placeholder="Pesquisar MAC, nome ou fabricante" value="'+this.escape(this.macFilter)+'" aria-label="Pesquisar inventário">'+
+          '<select data-inventory-filter="port"><option value="all">Todas as portas</option>'+[...new Set(macRows.map(e=>String(e.port||"")))].sort((a,b)=>Number(a)-Number(b)).map(v=>'<option value="'+this.escape(v)+'" '+(this.devicePortFilter===v?'selected':'')+'>Porta '+this.escape(v)+'</option>').join("")+'</select>'+
+          '<select data-inventory-filter="vlan"><option value="all">Todas as VLANs</option>'+[...new Set(macRows.map(e=>String(e.vlan||"")))].sort().map(v=>'<option value="'+this.escape(v)+'" '+(this.deviceVlanFilter===v?'selected':'')+'>VLAN '+this.escape(v)+'</option>').join("")+'</select>'+
+          '<select data-inventory-filter="vendor"><option value="all">Todos os fabricantes</option>'+[...new Set(macRows.map(e=>e.vendor||"Desconhecido"))].sort().map(v=>'<option value="'+this.escape(v)+'" '+(this.deviceVendorFilter===v?'selected':'')+'>'+this.escape(v)+'</option>').join("")+'</select></div><p class="muted">'+matches.length+' registros filtrados</p>'
+          +'<div class="scroll"><table><thead><tr><th>Dispositivo / MAC</th><th>Porta</th><th>VLAN</th><th>Fabricante / classificação</th><th>Primeira observação</th><th>Última observação</th></tr></thead><tbody>'
+          +matches.map(e=>'<tr><td><button class="mac-name-button" data-name-mac="'+this.escape(sw.id)+'" data-mac="'+this.escape(e.mac)+'" title="Editar nome do dispositivo">'+this.escape(this.pref(sw,"devices",e.mac,"Nomear"))+'</button><small>'+this.escape(e.mac)+'</small></td><td>'+this.escape(this.pref(sw,"ports",String(e.port),"Porta "+e.port))+'</td><td>'+this.escape(e.vlan)+'</td><td>'+this.escape(e.vendor||e.classification)+'</td><td>'+stamp(e.first_seen)+'</td><td>'+stamp(e.last_seen)+'</td></tr>').join('')
           +'</tbody></table></div><p class="footnote">Exibindo até 200 registros recentes do histórico do switch. MACs administrados localmente não permitem atribuição confiável por OUI.</p></section>';
       }
       else if(this.tab === "topology") body += '<section class="card"><h3>Mapa lógico da rede</h3>'+this.topologyMap(sw)+'</section>';
@@ -552,6 +559,10 @@ class HaOracoPanel extends HTMLElement {
       .metric small{display:block;font-size:12px;margin-bottom:11px;color:var(--secondary-text-color)}
       .metric strong{font-size:clamp(21px,2vw,28px);font-weight:650;letter-spacing:-.5px}
       .metric strong.small{font-size:16px;line-height:1.5}
+      .inventory-filters{display:flex;flex-wrap:wrap;gap:9px;margin:14px 0}
+      .inventory-filters input,.inventory-filters select{border:1px solid var(--divider-color);border-radius:9px;padding:9px;background:var(--card-background-color);color:var(--primary-text-color);min-width:170px}
+      .mac-name-button{padding:3px 0;border:0;color:var(--primary-color);font-weight:600;text-align:left}
+      td .mac-name-button+small{display:block;font-size:11px}
       .click-port{cursor:pointer}.click-port:hover{background:var(--secondary-background-color)}
       .card{box-shadow:0 7px 24px rgba(0,0,0,.055)}
       .heading{border-bottom:1px solid var(--divider-color);padding-bottom:13px;margin-bottom:20px}
@@ -707,12 +718,22 @@ class HaOracoPanel extends HTMLElement {
       this.snapshotDay=btn.dataset.auditDay;this.render();
     }));
     this.shadowRoot.querySelectorAll("[data-modal-backdrop]").forEach(el=>el.addEventListener("click",e=>{
-      if(e.target===el){this.snapshotModal=null;this.render();}
+      if(e.target===el){this.snapshotModal=null;this.portModal=null;this.render();}
     }));
     this.shadowRoot.querySelectorAll("[data-history-port]").forEach(el=>el.addEventListener("change",()=>{
       this.selectedPort[el.dataset.historyPort]=el.value;
       this.render();
       this.loadCurrentCharts();
+    }));
+    this.shadowRoot.querySelectorAll("[data-name-mac]").forEach(btn=>btn.addEventListener("click",()=>{
+      const sw=(this.data?.switches||[]).find(x=>x.id===btn.dataset.nameMac);
+      if(sw)this.askName(sw,"devices",btn.dataset.mac,this.pref(sw,"devices",btn.dataset.mac,""));
+    }));
+    this.shadowRoot.querySelectorAll("[data-inventory-filter]").forEach(el=>el.addEventListener("change",()=>{
+      if(el.dataset.inventoryFilter==="port")this.devicePortFilter=el.value;
+      if(el.dataset.inventoryFilter==="vlan")this.deviceVlanFilter=el.value;
+      if(el.dataset.inventoryFilter==="vendor")this.deviceVendorFilter=el.value;
+      this.render();
     }));
     this.shadowRoot.getElementById("refresh")?.addEventListener("click",()=>this.refresh());
     this.shadowRoot.getElementById("mac-filter")?.addEventListener("change",ev=>{this.macFilter=ev.target.value;this.render()});
