@@ -16,6 +16,10 @@ class HaOracoPanel extends HTMLElement {
     this.historyPanels = {};
     this.snapshotModal = null;
     this.snapshotDay = null;
+    this.portModal = null;
+    this.devicePortFilter = "all";
+    this.deviceVlanFilter = "all";
+    this.deviceVendorFilter = "all";
   }
   set hass(value) {
     this._hass = value;
@@ -324,6 +328,54 @@ class HaOracoPanel extends HTMLElement {
       +'<div class="chart-legend"><span>● RX — azul</span><span>● TX — verde</span><span>'
       +samples.length+' amostras '+(persisted.length?'registradas no banco':'desta sessão')+'</span><span>'+stamp(samples[0])+' — '+stamp(samples[samples.length-1])+'</span></div>';
   }
+  pref(sw,category,key,fallback="") {
+    return sw.preferences?.[category]?.[key]??fallback;
+  }
+  async savePreference(sw,category,key,value) {
+    try {
+      await this._hass.connection.sendMessagePromise({
+        type:"ha_oraco/preference",entry_id:sw.id,category,key,value
+      });
+      sw.preferences ||= {};
+      sw.preferences[category] ||= {};
+      sw.preferences[category][key]=value;
+      this.render();
+    } catch(error) {
+      this.error="Não foi possível salvar preferência: "+String(error);
+      this.render();
+    }
+  }
+  askName(sw,category,key,current) {
+    const label=category==="ports"?"Apelido da porta":"Nome do dispositivo";
+    const name=prompt(label+" (vazio remove):",current||"");
+    if(name!==null)this.savePreference(sw,category,key,name.trim().slice(0,80));
+  }
+  portDialog() {
+    if(!this.portModal)return "";
+    const {switchId,number}=this.portModal;
+    const sw=(this.data?.switches||[]).find(row=>row.id===switchId);
+    const port=sw?.ports?.[number];
+    if(!port)return "";
+    const fmt=n=>Number(n||0).toLocaleString("pt-BR");
+    const name=this.pref(sw,"ports",String(number),"Porta "+number);
+    const devices=(sw.mac?.mac_entries||[]).filter(row=>String(row.port).replace(/\\D/g,"")===String(number));
+    const row=(title,value)=>'<div class="detail-item"><small>'+title+'</small><strong>'+this.escape(value)+'</strong></div>';
+    return '<div class="audit-backdrop" data-modal-backdrop="true"><section class="audit-dialog" role="dialog" aria-modal="true" aria-label="Detalhes da porta">'+
+      '<div class="audit-header"><div><h2>'+this.escape(name)+'</h2><p>Porta '+this.escape(number)+' · '+(port.up?"Link ativo":"Link inativo")+'</p></div>'+
+      '<button class="audit-close" data-close-port="true" aria-label="Fechar">×</button></div>'+
+      '<div class="audit-body"><div class="detail-grid">'+row("Velocidade negociada",port.speed||"—")+
+      row("Duplex",port.duplex||"—")+row("RX atual",fmt(port.rx_bps)+" bit/s")+
+      row("TX atual",fmt(port.tx_bps)+" bit/s")+row("Bytes RX",fmt(port.rx_bytes))+
+      row("Bytes TX",fmt(port.tx_bytes))+row("Pacotes RX",fmt(port.rx_packets))+
+      row("Pacotes TX",fmt(port.tx_packets))+'</div>'+
+      '<h3 class="spaced">MACs aprendidos ('+devices.length+')</h3>'+
+      (devices.length?'<div class="detail-grid">'+devices.map(d=>row("VLAN "+(d.vlan||"—"),
+        this.pref(sw,"devices",d.mac,d.vendor||d.mac)+" · "+d.mac)).join("")+'</div>':
+        '<p class="muted">Nenhum endereço MAC observado nesta porta.</p>')+
+      '<div class="history-controls"><button class="history-action" data-port-history="'+this.escape(sw.id)+'" data-port-number="'+this.escape(number)+'">Abrir histórico de tráfego da porta</button>'+
+      '<button class="history-action" data-rename-port="'+this.escape(sw.id)+'" data-number="'+this.escape(number)+'">Editar apelido</button></div>'+
+      '</div></section></div>';
+  }
   topologyMap(sw) {
     const ports=Object.values(sw.ports||{}).sort((a,b)=>Number(a.port)-Number(b.port));
     const nodes=sw.topology?.nodes||[],edges=sw.topology?.edges||[];
@@ -353,7 +405,8 @@ class HaOracoPanel extends HTMLElement {
         const mac=device.mac||device.id||"Dispositivo";
         const vendor=device.vendor && !["Desconhecido","MAC local/privado","Multicast"].includes(device.vendor)?device.vendor:null;
         const friendly=device.name||((device.label&&device.label!==mac)?device.label:null)||vendor;
-        const mainLabel=friendly?friendly+" · "+mac:mac;
+        const assigned=this.pref(sw,"devices",mac,"");
+        const mainLabel=(assigned||friendly)?(assigned||friendly)+" · "+mac:mac;
         parts.push('<path d="M465 '+mid+' H497 V'+cy+' H535" stroke="'+status+'" stroke-width="1.4" fill="none"/>',
           '<rect x="535" y="'+(cy-16)+'" width="444" height="34" rx="8" fill="#14283b" stroke="#375972"/>',
           '<circle cx="550" cy="'+cy+'" r="4" fill="#45a7d7"/>',
@@ -378,7 +431,7 @@ class HaOracoPanel extends HTMLElement {
       const rate = side => ps.reduce((sum,p)=>sum + (Number(p[side+"_bps"]) || 0),0);
       const fmt = n => n >= 1e9 ? (n/1e9).toFixed(2)+" Gb/s" : n>=1e6 ? (n/1e6).toFixed(1)+" Mb/s" : n>=1e3 ? (n/1e3).toFixed(1)+" kb/s" : n.toFixed(0)+" b/s";
       const peak=number=>sw.peaks?.ports?.[number]||{};
-      const row = (p) => '<tr><td>Porta '+this.escape(p.port)+'</td><td><span class="dot '+(p.up?"ok":"")+'"></span>'+(p.up?"Ativa":"Inativa")+'</td><td>'+this.escape(p.speed)+'</td><td>'+fmt(Number(p.rx_bps)||0)+'</td><td>'+fmt(Number(p.tx_bps)||0)+'</td><td>'+fmt(peak(p.port).rx_bps||0)+'</td><td>'+fmt(peak(p.port).tx_bps||0)+'</td></tr>';
+      const row = (p) => '<tr class="click-port" data-open-port="'+this.escape(sw.id)+'" data-port-number="'+this.escape(p.port)+'"><td>'+this.escape(this.pref(sw,"ports",String(p.port),"Porta "+p.port))+'</td><td><span class="dot '+(p.up?"ok":"")+'"></span>'+(p.up?"Ativa":"Inativa")+'</td><td>'+this.escape(p.speed)+'</td><td>'+fmt(Number(p.rx_bps)||0)+'</td><td>'+fmt(Number(p.tx_bps)||0)+'</td><td>'+fmt(peak(p.port).rx_bps||0)+'</td><td>'+fmt(peak(p.port).tx_bps||0)+'</td></tr>';
 
       if (this.tab === "overview") {
         body += '<div class="stats"><section class="card metric"><small>Portas ativas</small><strong>'+online+' / '+ps.length+'</strong></section><section class="card metric"><small>Tráfego RX</small><strong>'+fmt(rate("rx"))+'</strong></section><section class="card metric"><small>Tráfego TX</small><strong>'+fmt(rate("tx"))+'</strong></section><section class="card metric"><small>Firmware</small><strong class="small">'+this.escape(sw.device?.firmware)+'</strong></section></div>';
@@ -499,6 +552,7 @@ class HaOracoPanel extends HTMLElement {
       .metric small{display:block;font-size:12px;margin-bottom:11px;color:var(--secondary-text-color)}
       .metric strong{font-size:clamp(21px,2vw,28px);font-weight:650;letter-spacing:-.5px}
       .metric strong.small{font-size:16px;line-height:1.5}
+      .click-port{cursor:pointer}.click-port:hover{background:var(--secondary-background-color)}
       .card{box-shadow:0 7px 24px rgba(0,0,0,.055)}
       .heading{border-bottom:1px solid var(--divider-color);padding-bottom:13px;margin-bottom:20px}
       .traffic-chart{background:linear-gradient(180deg,transparent,color-mix(in srgb,var(--primary-color) 3%,transparent));border-radius:11px}
@@ -602,7 +656,21 @@ class HaOracoPanel extends HTMLElement {
       @media(max-width:950px){.stats{grid-template-columns:repeat(2,minmax(0,1fr))}.columns{grid-template-columns:1fr}}@media(max-width:500px){main{padding:14px}.stats{gap:8px}.card{padding:14px}.metric strong{font-size:20px}}
     </style><main><header><div class="brand-wrap"><h1 class="brand"><img src="/ha_oraco_static/brand/icon.svg" alt="" aria-hidden="true"/> HoraInfo</h1><div class="brand-subtitle">${this.escape(switches.length===1?(switches[0].device?.name||switches[0].device?.model||switches[0].host):switches.length+" equipamentos monitorados")}</div></div><button class="refresh" id="refresh">Atualizar</button></header>
     <nav>${tabs.map(([id,label])=>'<button data-tab="'+id+'" class="'+(id===this.tab?"selected":"")+'">'+label+'</button>').join("")}</nav>
-    ${body}</main>${this.snapshotDialog()}`;
+    ${body}</main>${this.snapshotDialog()}${this.portDialog()}`;
+    this.shadowRoot.querySelectorAll("[data-open-port]").forEach(el=>el.addEventListener("click",()=>{
+      this.portModal={switchId:el.dataset.openPort,number:el.dataset.portNumber};this.render();
+    }));
+    this.shadowRoot.querySelectorAll("[data-close-port]").forEach(btn=>btn.addEventListener("click",()=>{
+      this.portModal=null;this.render();
+    }));
+    this.shadowRoot.querySelectorAll("[data-port-history]").forEach(btn=>btn.addEventListener("click",()=>{
+      const sw=btn.dataset.portHistory,n=btn.dataset.portNumber;
+      this.portModal=null;this.selectedPort[sw]=n;this.tab="history";this.render();this.loadCurrentCharts();
+    }));
+    this.shadowRoot.querySelectorAll("[data-rename-port]").forEach(btn=>btn.addEventListener("click",()=>{
+      const sw=(this.data?.switches||[]).find(x=>x.id===btn.dataset.renamePort);
+      if(sw)this.askName(sw,"ports",btn.dataset.number,this.pref(sw,"ports",btn.dataset.number,""));
+    }));
     this.shadowRoot.querySelectorAll("[data-tab]").forEach(el => el.addEventListener("click", () => {this.tab=el.dataset.tab;this.render();this.loadCurrentCharts();this.loadSfpTemperature();this.loadSfpOptics()}));
     this.shadowRoot.querySelectorAll("[data-traffic-port]").forEach(btn=>btn.addEventListener("click",()=>{
       this.selectedPort[btn.dataset.switch]=btn.dataset.trafficPort;
