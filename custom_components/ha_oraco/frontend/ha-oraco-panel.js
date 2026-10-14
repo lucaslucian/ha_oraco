@@ -50,7 +50,7 @@ class HaOracoPanel extends HTMLElement {
     for(const sw of this.data.switches||[]){
       const port=this.selectedPort[sw.id]||"__total__";
       if(!port)continue;
-      const hours=this.chartHours[sw.id+"|"+port]||24;
+      const hours=this.chartHours[sw.id+"|"+port]||this.defaultRange(sw);
       const trafficKey=sw.id+"|traffic|"+port+"|"+hours+"|sfp";
       const dailyKey=sw.id+"|daily|"+port+"|24|sfp";
       if(refresh||!this.historyViews[trafficKey])this.fetchHistory(sw.id,"traffic",port,hours);
@@ -254,7 +254,7 @@ class HaOracoPanel extends HTMLElement {
     this.render();
   }
   ranges(switchId,port="__total__") {
-    const chosen=this.chartHours[switchId+"|"+port]||24;
+    const chosen=this.chartHours[switchId+"|"+port]||this.defaultRange((this.data?.switches||[]).find(x=>x.id===switchId)||{preferences:{}});
     const options=[[1,"Última hora"],[6,"6 horas"],[12,"12 horas"],[24,"1 dia"],
       [72,"3 dias"],[120,"5 dias"],[168,"7 dias"],[360,"15 dias"],[720,"30 dias"]];
     return '<select class="history-select" data-chart-hours-select="'+this.escape(switchId)+'" data-port="'+this.escape(port)+'">'+
@@ -359,7 +359,7 @@ class HaOracoPanel extends HTMLElement {
   }
   trafficChart(id, port=null) {
     const sw=(this.data?.switches||[]).find(x=>x.id===id);
-    const hours=this.chartHours[id+"|"+(port||"__total__")]||24;
+    const hours=this.chartHours[id+"|"+(port||"__total__")]||this.defaultRange(sw||{preferences:{}});
     const key=id+"|traffic|"+(port||"__total__")+"|"+hours+"|sfp";
     const query=this.historyViews[key];
     const persisted=(query?.items||(port ? (sw?.traffic_by_port?.[port]||[]) : (sw?.traffic_history||[]))).map(v=>({rx:Number(v.rx)||0,tx:Number(v.tx)||0,timestamp:v.timestamp}));
@@ -830,7 +830,7 @@ class HaOracoPanel extends HTMLElement {
     this.shadowRoot.querySelectorAll("[data-traffic-port]").forEach(btn=>btn.addEventListener("click",()=>{
       this.selectedPort[btn.dataset.switch]=btn.dataset.trafficPort;
       const id=btn.dataset.switch,port=btn.dataset.trafficPort;
-      this.fetchHistory(id,"traffic",port,this.chartHours[id+"|"+port]||24);
+      this.fetchHistory(id,"traffic",port,this.chartHours[id+"|"+port]||this.defaultRange((this.data?.switches||[]).find(x=>x.id===id)||{preferences:{}}));
       if(!this.historyViews[id+"|daily|"+port+"|24|sfp"])this.fetchHistory(id,"daily",port);
     }));
     this.shadowRoot.querySelectorAll("[data-sfp-optical-hours]").forEach(select=>select.addEventListener("change",()=>{
@@ -847,6 +847,8 @@ class HaOracoPanel extends HTMLElement {
     this.shadowRoot.querySelectorAll("[data-chart-hours-select]").forEach(btn=>btn.addEventListener("change",()=>{
       const id=btn.dataset.chartHoursSelect,port=btn.dataset.port,hours=Number(btn.value);
       this.chartHours[id+"|"+port]=hours;
+      const sw=(this.data?.switches||[]).find(x=>x.id===id);
+      if(sw)this.savePreference(sw,"options","default_hours",hours);
       this.fetchHistory(id,"traffic",port,hours);
     }));
     this.shadowRoot.querySelectorAll("[data-daily-switch]").forEach(btn=>btn.addEventListener("click",()=>this.fetchHistory(btn.dataset.dailySwitch,"daily",btn.dataset.dailyPort)));
