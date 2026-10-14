@@ -391,3 +391,41 @@ def test_optical_rejects_invalid_values_and_survives_restart():
             raise AssertionError("Unsupported optical metric should be rejected")
     with TemporaryDirectory() as root:
         asyncio.run(scenario(root))
+
+def test_sqlite_storage_summary_reports_actual_rows_and_reusable_space():
+    async def scenario(root):
+        db=load().HistoryDatabase(FakeHass(root),"storage_test")
+        await db.initialize()
+        await db.record_traffic({"2":{"rx_bps":200,"tx_bps":500,
+                                      "rx_bytes":1200,"tx_bytes":600}})
+        await db.record_snapshot("sfp",{"vendor":"ODI","temperature_c":66.0,"voltage_v":3.1})
+        data=await db.storage_summary()
+        assert data["scope"]=="whole_database"
+        assert data["file_bytes"]>=data["used_bytes"]>0
+        assert data["free_bytes"]>=0
+        assert data["file_bytes"]==data["used_bytes"]+data["free_bytes"]
+        assert data["rows"]["traffic"]>=1
+        assert data["rows"]["traffic_5m"]>=1
+        assert data["rows"]["sfp_temperature_5m"]==1
+        assert data["rows"]["sfp_optical_5m"]==1
+        assert data["rows"]["snapshots"]==1
+        assert data["rows"]["snapshot_daily"]==1
+    with TemporaryDirectory() as root:
+        asyncio.run(scenario(root))
+
+
+def test_sfp_temp_pruning_runs_even_without_valid_temperature():
+    async def scenario(root):
+        db=load().HistoryDatabase(FakeHass(root),"expired_sfp")
+        await db.initialize()
+        await db.record_snapshot("sfp",{"vendor":"ODI","temperature_c":55})
+        from sqlite3 import connect
+        with connect(db.path) as connection:
+            connection.execute("UPDATE sfp_temperature_5m SET bucket=? WHERE switch_id=?",
+                               ("2020-01-01T00:00:00+00:00","expired_sfp"))
+        await db.record_snapshot("sfp",{"vendor":"ODI","temperature_c":None})
+        assert (await db.temperature_history(720))["count"]==0
+        with connect(db.path) as connection:
+            assert connection.execute("SELECT COUNT(*) FROM sfp_temperature_5m").fetchone()[0]==0
+    with TemporaryDirectory() as root:
+        asyncio.run(scenario(root))
