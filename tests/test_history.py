@@ -274,3 +274,65 @@ def test_sfp_temperature_rejects_invalid_measurements_and_survives_restart():
         assert (await reopened.snapshot_history("sfp"))[0]["changes"]==old_count
     with TemporaryDirectory() as root:
         asyncio.run(scenario(root))
+
+def test_sfp_volatile_optics_do_not_generate_changes():
+    async def scenario(root):
+        db=load().HistoryDatabase(FakeHass(root),"sfp_volatility")
+        await db.initialize()
+        initial={
+            "vendor":"ODI","part_number":"DFP-34X-2IY3",
+            "module_present":"Yes","loss_of_signal":"No",
+            "temperature_c":64.0,"temp":"64-0",
+            "voltage_v":3.12,"voltage":"121-66",
+            "current_ma":0.0,"current":"0-0",
+            "rx_dbm":-40.0,"rxpower":"0-1",
+            "tx_dbm":-40.0,"txpower":"0-1",
+        }
+        await db.record_snapshot("sfp",initial)
+        changed={**initial,"temperature_c":67.0,"temp":"67-0",
+                 "voltage_v":3.27,"voltage":"127-188",
+                 "current_ma":12.0,"current":"23-112",
+                 "rx_dbm":-17.5,"rxpower":"1-120",
+                 "tx_dbm":1.3,"txpower":"3-120"}
+        await db.record_snapshot("sfp",changed)
+        days=await db.snapshot_history("sfp")
+        assert days[0]["checks"]==2
+        assert days[0]["changes"]==1
+        assert len(days[0]["events"])==1
+        for field in ("temperature_c","voltage_v","current_ma","rx_dbm","tx_dbm",
+                      "temp","voltage","current","rxpower","txpower"):
+            assert field not in days[0]["events"][0]["data"]
+        await db.record_snapshot("sfp",{**changed,"loss_of_signal":"Yes"})
+        days=await db.snapshot_history("sfp")
+        assert days[0]["changes"]==2
+        assert days[0]["events"][0]["data"]["loss_of_signal"]=="Yes"
+        await db.record_snapshot("sfp",{**changed,"part_number":"DIFFERENT"})
+        days=await db.snapshot_history("sfp")
+        assert days[0]["changes"]==3
+    with TemporaryDirectory() as root:
+        asyncio.run(scenario(root))
+
+
+def test_legacy_sfp_snapshots_with_optical_metrics_do_not_create_false_event():
+    async def scenario(root):
+        db=load().HistoryDatabase(FakeHass(root),"sfp_legacy_fields")
+        await db.initialize()
+        import json, hashlib
+        from sqlite3 import connect
+        from datetime import datetime,timezone
+        old={"vendor":"ODI","module_present":"Yes","voltage_v":3.1,
+             "rx_dbm":-40.0,"tx_dbm":-40.0,"current_ma":0.0,"temperature_c":65.0}
+        encoded=json.dumps(old,sort_keys=True)
+        with connect(db.path) as con:
+            con.execute("INSERT INTO snapshots VALUES(?,?,?,?,?)",(
+                "sfp_legacy_fields","sfp",datetime.now(timezone.utc).isoformat(),
+                hashlib.sha256(encoded.encode()).hexdigest(),encoded))
+        await db.record_snapshot("sfp",{"vendor":"ODI","module_present":"Yes",
+                                        "voltage_v":3.25,"rx_dbm":-20.0,
+                                        "tx_dbm":1.0,"current_ma":5.0,
+                                        "temperature_c":70.0})
+        days=await db.snapshot_history("sfp")
+        assert len(days[0]["events"])==1
+        assert days[0]["changes"]==0
+    with TemporaryDirectory() as root:
+        asyncio.run(scenario(root))
