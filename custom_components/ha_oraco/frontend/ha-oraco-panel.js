@@ -260,6 +260,22 @@ class HaOracoPanel extends HTMLElement {
     return box+'<h4>Volume diário RX/TX · período selecionado</h4>'+chart+
       '<div class="chart-legend"><span>● RX — azul</span><span>● TX — verde</span></div>';
   }
+  snapshotDifference(current,previous) {
+    if(!previous)return '<p class="muted">Primeiro estado registrado nesta categoria.</p>'+this.snapshotDetails(current);
+    const flatten=(obj,prefix="",out={})=>{
+      if(obj!==null&&typeof obj==="object"&&!Array.isArray(obj)){
+        for(const [key,value] of Object.entries(obj))flatten(value,prefix?prefix+" / "+key:key,out);
+      } else out[prefix]=Array.isArray(obj)?JSON.stringify(obj):obj;
+      return out;
+    };
+    const before=flatten(previous),after=flatten(current);
+    const keys=[...new Set([...Object.keys(before),...Object.keys(after)])];
+    const changes=keys.filter(key=>JSON.stringify(before[key])!==JSON.stringify(after[key]));
+    if(!changes.length)return '<p class="muted">Sem diferenças nos campos monitorados.</p>';
+    return '<div class="snapshot-diff"><div class="diff-header"><span>Campo</span><span>Antes</span><span>Depois</span></div>'+
+      changes.map(key=>'<div class="diff-row"><span>'+this.escape(key)+'</span><del>'+this.escape(before[key]??"—")+'</del><ins>'+this.escape(after[key]??"—")+'</ins></div>').join("")+
+      '</div>';
+  }
   snapshotDetails(data,level=0) {
     if(data===null||data===undefined)return "—";
     if(Array.isArray(data))return this.escape(data.join(", "));
@@ -297,7 +313,12 @@ class HaOracoPanel extends HTMLElement {
           const count=entries.reduce((n,d)=>n+Number(d.changes||0),0);
           return '<button class="audit-day '+(day===current?'active':'')+'" data-audit-day="'+this.escape(day)+'"><strong>'+this.escape(day.split('-').reverse().join('/'))+'</strong><span>'+(count?count+' alteração(ões)':'Sem alterações')+'</span></button>';
         }).join('');
-        const details=events.map(ev=>'<article class="audit-event"><div class="audit-event-heading">Registro · '+this.escape(new Date(ev.timestamp).toLocaleTimeString('pt-BR'))+'</div>'+this.snapshotDetails(ev.data)+'</article>').join('');
+        const all=days.flatMap(d=>d.events||[]).sort((a,b)=>new Date(b.timestamp)-new Date(a.timestamp));
+        const details=events.map(ev=>{
+          const index=all.findIndex(item=>item.timestamp===ev.timestamp);
+          const previous=index>=0?all[index+1]?.data:null;
+          return '<article class="audit-event"><div class="audit-event-heading">Alteração · '+this.escape(new Date(ev.timestamp).toLocaleTimeString('pt-BR'))+'</div>'+this.snapshotDifference(ev.data,previous)+'</article>';
+        }).join('');
         body=unique.length?
           '<div class="audit-layout"><div class="audit-days">'+list+'</div><section class="audit-content"><h3>'+this.escape(current.split('-').reverse().join('/'))+'</h3><p class="section-subtitle">'+checks+' verificações · '+changes+' alterações</p>'+
           (selected[0]?.checked_at?'<p class="muted">Última análise: '+this.escape(new Date(selected[0].checked_at).toLocaleString('pt-BR'))+'</p>':'')+
@@ -597,6 +618,11 @@ class HaOracoPanel extends HTMLElement {
       .metric small{display:block;font-size:12px;margin-bottom:11px;color:var(--secondary-text-color)}
       .metric strong{font-size:clamp(21px,2vw,28px);font-weight:650;letter-spacing:-.5px}
       .metric strong.small{font-size:16px;line-height:1.5}
+      .snapshot-diff{display:grid;gap:3px;min-width:0}
+      .diff-header,.diff-row{display:grid;grid-template-columns:minmax(130px,1.3fr) repeat(2,minmax(100px,1fr));align-items:start;gap:8px;padding:8px;border-bottom:1px solid var(--divider-color);font-size:12px}
+      .diff-header{font-weight:600;color:var(--secondary-text-color)}.diff-row>*{overflow-wrap:anywhere}
+      .diff-row del{color:#c47f7f;text-decoration:none}.diff-row ins{color:#58b993;text-decoration:none}
+      @media(max-width:600px){.diff-header,.diff-row{grid-template-columns:minmax(80px,1fr) repeat(2,minmax(65px,1fr));font-size:11px}}
       .board-controls{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:9px;margin:12px 0;font-size:12px;color:var(--secondary-text-color)}
       .topology-board{position:relative;min-width:650px;overflow:hidden;border-radius:12px;border:1px solid var(--divider-color);background:var(--secondary-background-color)}
       .topology-board svg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
