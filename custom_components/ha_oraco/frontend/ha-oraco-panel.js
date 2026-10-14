@@ -519,6 +519,7 @@ class HaOracoPanel extends HTMLElement {
   render() {
     if (!this.shadowRoot) return;
     const switches = this.data?.switches || [];
+    const compact=switches[0]?this.pref(switches[0],"options","compact",false):false;
     const tabs = [["overview","Visão geral"],["ports","Portas"],["history","Histórico"],["sfp","SFP+"],["mac","Dispositivos"],["vlan","VLANs"],["protection","Proteções"],["topology","Mapa de rede"],["system","Sistema"]];
     let body = this.error ? '<section class="card">Não foi possível consultar os dados. '+this.escape(this.error)+'</section>' : "";
     if (!switches.length && !this.error) body = '<section class="card">Nenhum switch configurado ou aguardando dados.</section>';
@@ -671,6 +672,10 @@ class HaOracoPanel extends HTMLElement {
       .board-node{position:absolute;z-index:2;width:125px;min-height:43px;transform:translateY(-50%);padding:8px 10px;border:1px solid var(--primary-color);border-radius:9px;background:var(--card-background-color);color:var(--primary-text-color);cursor:grab;touch-action:none;user-select:none;box-shadow:0 3px 12px rgba(0,0,0,.15)}
       .board-node:active{cursor:grabbing}.board-node b{display:block;font-size:11px;overflow-wrap:anywhere}.board-node small{font-size:10px}
       .board-port{border-color:#3bbb84}.board-mac{border-color:#45a7d7}
+      .header-actions{display:flex;align-items:center;flex-wrap:wrap;gap:8px}
+      .compact-view .card{padding:13px;margin-bottom:10px}
+      .compact-view .stats{gap:9px}.compact-view .metric strong{font-size:20px}
+      .compact-view .optical-item{padding:10px}
       .inventory-filters{display:flex;flex-wrap:wrap;gap:9px;margin:14px 0}
       .inventory-filters input,.inventory-filters select{border:1px solid var(--divider-color);border-radius:9px;padding:9px;background:var(--card-background-color);color:var(--primary-text-color);min-width:170px}
       .mac-name-button{padding:3px 0;border:0;color:var(--primary-color);font-weight:600;text-align:left}
@@ -777,7 +782,7 @@ class HaOracoPanel extends HTMLElement {
       .chart-legend{display:flex;gap:17px;flex-wrap:wrap;font-size:11px;color:var(--secondary-text-color);margin:3px 0 0 22px}
       .traffic-chart{max-height:190px}.card{border-radius:14px}.metric{min-width:0}.metric strong{overflow-wrap:anywhere}
       @media(max-width:950px){.stats{grid-template-columns:repeat(2,minmax(0,1fr))}.columns{grid-template-columns:1fr}}@media(max-width:500px){main{padding:14px}.stats{gap:8px}.card{padding:14px}.metric strong{font-size:20px}}
-    </style><main><header><div class="brand-wrap"><h1 class="brand"><img src="/ha_oraco_static/brand/icon.svg" alt="" aria-hidden="true"/> HoraInfo</h1><div class="brand-subtitle">${this.escape(switches.length===1?(switches[0].device?.name||switches[0].device?.model||switches[0].host):switches.length+" equipamentos monitorados")}</div></div><button class="refresh" id="refresh">Atualizar</button></header>
+    </style><main class="${compact?'compact-view':''}"><header><div class="brand-wrap"><h1 class="brand"><img src="/ha_oraco_static/brand/icon.svg" alt="" aria-hidden="true"/> HoraInfo</h1><div class="brand-subtitle">${this.escape(switches.length===1?(switches[0].device?.name||switches[0].device?.model||switches[0].host):switches.length+" equipamentos monitorados")}</div></div><div class="header-actions"><button class="refresh" data-compact-toggle="true">${compact?'Exibição normal':'Exibição compacta'}</button><button class="refresh" id="refresh">Atualizar</button></div></header>
     <nav>${tabs.map(([id,label])=>'<button data-tab="'+id+'" class="'+(id===this.tab?"selected":"")+'">'+label+'</button>').join("")}</nav>
     ${body}</main>${this.snapshotDialog()}${this.portDialog()}`;
     this.shadowRoot.querySelectorAll("[data-board-node]").forEach(node=>{
@@ -893,6 +898,10 @@ class HaOracoPanel extends HTMLElement {
       if(el.dataset.inventoryFilter==="vlan")this.deviceVlanFilter=el.value;
       if(el.dataset.inventoryFilter==="vendor")this.deviceVendorFilter=el.value;
       this.render();
+    }));
+    this.shadowRoot.querySelectorAll("[data-compact-toggle]").forEach(btn=>btn.addEventListener("click",()=>{
+      const sw=(this.data?.switches||[])[0];
+      if(sw)this.savePreference(sw,"options","compact",!this.pref(sw,"options","compact",false));
     }));
     this.shadowRoot.getElementById("refresh")?.addEventListener("click",()=>this.refresh());
     this.shadowRoot.getElementById("mac-filter")?.addEventListener("change",ev=>{this.macFilter=ev.target.value;this.render()});
