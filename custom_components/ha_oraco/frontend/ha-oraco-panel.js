@@ -11,6 +11,7 @@ class HaOracoPanel extends HTMLElement {
     this.selectedPort = {};
     this.chartHours = {};
     this.sfpTemperatureHours = {};
+    this.sfpOpticalHours = {};
     this.historyViews = {};
     this.historyPanels = {};
     this.snapshotModal = null;
@@ -37,7 +38,7 @@ class HaOracoPanel extends HTMLElement {
       }
       this.error = null;
     } catch (err) { this.error = String(err); }
-    finally { this.busy = false; this.render(); this.loadCurrentCharts(true); this.loadSfpTemperature(); }
+    finally { this.busy = false; this.render(); this.loadCurrentCharts(true); this.loadSfpTemperature(); this.loadSfpOptics(); }
   }
 
   loadCurrentCharts(refresh=false) {
@@ -59,6 +60,57 @@ class HaOracoPanel extends HTMLElement {
       const key=sw.id+"|sfp_temperature|__total__|"+hours+"|sfp";
       if(!this.historyViews[key])this.fetchHistory(sw.id,"sfp_temperature","__total__",hours);
     }
+  }
+  loadSfpOptics() {
+    if(!this._hass||!this.data||this.tab!=="sfp")return;
+    for(const sw of this.data.switches||[]){
+      const hours=this.sfpOpticalHours[sw.id]||24;
+      for(const metric of ["voltage_v","current_ma","rx_dbm","tx_dbm"]){
+        const key=sw.id+"|sfp_optical|__total__|"+hours+"|"+metric;
+        if(!this.historyViews[key])this.fetchHistory(sw.id,"sfp_optical","__total__",hours,metric);
+      }
+    }
+  }
+  sfpOpticalCharts(sw) {
+    const hours=this.sfpOpticalHours[sw.id]||24;
+    const options=[[1,"1 hora"],[6,"6 horas"],[12,"12 horas"],[24,"1 dia"],
+                   [72,"3 dias"],[120,"5 dias"],[168,"7 dias"]];
+    const select='<label>Período<select class="history-select" data-sfp-optical-hours="'+this.escape(sw.id)+'">'+
+      options.map(([h,label])=>'<option value="'+h+'" '+(hours===h?'selected':'')+'>'+label+'</option>').join("")+'</select></label>';
+    const charts=[
+      ["voltage_v","Tensão do módulo","V"],
+      ["current_ma","Corrente do laser","mA"],
+      ["rx_dbm","Potência recebida (RX)","dBm"],
+      ["tx_dbm","Potência transmitida (TX)","dBm"]
+    ].map(([metric,title,unit])=>{
+      const key=sw.id+"|sfp_optical|__total__|"+hours+"|"+metric;
+      const record=this.historyViews[key];
+      const format=v=>Number(v).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2})+" "+unit;
+      if(!record||record.loading)return '<div class="optical-history-tile"><h4>'+title+'</h4><p class="muted">Carregando medições…</p></div>';
+      if(record.error)return '<div class="optical-history-tile"><h4>'+title+'</h4><p class="muted">'+this.escape(record.error)+'</p></div>';
+      const samples=record.items||[];
+      if(!samples.length)return '<div class="optical-history-tile"><h4>'+title+'</h4><p class="muted">Sem medições disponíveis neste período.</p></div>';
+      const low=Number(record.min),high=Number(record.max);
+      const pad=Math.max((high-low)*.12,unit==="dBm"?.4:.02);
+      const minY=low-pad,maxY=high+pad;
+      const xx=i=>12+(samples.length===1?176:i*352/(samples.length-1));
+      const yy=v=>18+145-(Number(v)-minY)/(maxY-minY)*145;
+      const poly=kind=>samples.map((row,i)=>xx(i)+","+yy(row[kind])).join(" ");
+      return '<div class="optical-history-tile"><h4>'+title+'</h4>'+
+        '<div class="optical-history-summary"><span>Min <b>'+format(low)+'</b></span>'+
+        '<span>Máx <b>'+format(high)+'</b></span>'+
+        '<span>Média <b>'+format(record.average)+'</b></span></div>'+
+        '<svg viewBox="0 0 380 184" role="img" aria-label="Histórico de '+title+' com média, mínima e máxima">'+
+        '<polyline fill="none" stroke="#899caf" stroke-width="1.4" stroke-dasharray="4 4" points="'+poly("min")+'"/>'+
+        '<polyline fill="none" stroke="#edac64" stroke-width="1.4" stroke-dasharray="4 4" points="'+poly("max")+'"/>'+
+        '<polyline fill="none" stroke="#33b3e2" stroke-width="2.4" points="'+poly("avg")+'"/></svg>'+
+        '<small>'+record.count+' leituras · blocos de 5 minutos</small></div>';
+    }).join("");
+    return '<section class="card"><h3>Histórico de medições ópticas</h3>'+
+      '<p class="section-subtitle">Tensão, corrente e potência óptica · retenção de 7 dias. Oscilações não geram eventos de alteração.</p>'+
+      '<div class="history-controls">'+select+'</div>'+
+      '<div class="optical-history-grid">'+charts+'</div>'+
+      '<div class="temp-legend"><span>Média — azul</span><span>Mínima — cinza</span><span>Máxima — laranja</span></div></section>';
   }
   sfpLabel(key) {
     const names={temperature_c:"Temperatura",voltage_v:"Tensão",current_ma:"Corrente do laser",
@@ -160,7 +212,7 @@ class HaOracoPanel extends HTMLElement {
     this.render();
     try {
       const result=await this._hass.connection.sendMessagePromise({
-        type:"ha_oraco/history",entry_id:switchId,mode,port,hours,kind
+        type:"ha_oraco/history",entry_id:switchId,mode,port,hours,kind,metric:kind
       });
       this.historyViews[key]={items:result.items||[],total:result.total||null,min:result.min,max:result.max,average:result.average,count:result.count,loading:false};
     } catch(error) {
@@ -346,7 +398,7 @@ class HaOracoPanel extends HTMLElement {
           +'<label>Período'+this.ranges(sw.id,selected)+'</label></div>'
           +this.trafficChart(sw.id,selected==="__total__"?null:selected)+this.dailyTable(sw.id,selected)+'</section>';
       }
-      else if(this.tab === "sfp") body += '<section class="card"><h3>Transceptor óptico · agora</h3><p class="section-subtitle">Medições e identificação atuais do módulo</p>'+this.renderSfp(sw)+this.snapshots(sw.id,'sfp','SFP+')+'</section>'+this.sfpTemperatureChart(sw);
+      else if(this.tab === "sfp") body += '<section class="card"><h3>Transceptor óptico · agora</h3><p class="section-subtitle">Medições e identificação atuais do módulo</p>'+this.renderSfp(sw)+this.snapshots(sw.id,'sfp','SFP+')+'</section>'+this.sfpTemperatureChart(sw)+this.sfpOpticalCharts(sw);
       else if(this.tab === "mac") {
         const macData=sw.mac||{};
         const macRows=macData.mac_history_entries||macData.mac_entries||[];
@@ -497,6 +549,13 @@ class HaOracoPanel extends HTMLElement {
       .history-controls{display:flex;gap:18px;align-items:end;flex-wrap:wrap;margin:17px 0}
       .history-controls label{display:flex;flex-direction:column;gap:7px;font-size:12px;color:var(--secondary-text-color)}
       .history-select{background:var(--card-background-color);border:1px solid var(--divider-color);border-radius:9px;color:var(--primary-text-color);padding:10px 14px;min-width:165px;font:inherit}
+      .optical-history-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:14px;margin:17px 0}
+      .optical-history-tile{min-width:0;border:1px solid var(--divider-color);background:var(--secondary-background-color);border-radius:12px;padding:16px}
+      .optical-history-tile h4{margin:0 0 12px}
+      .optical-history-tile svg{display:block;width:100%;height:auto}
+      .optical-history-summary{display:flex;gap:10px;justify-content:space-between;flex-wrap:wrap;font-size:11px;color:var(--secondary-text-color)}
+      .optical-history-summary b{display:block;color:var(--primary-text-color);font-size:13px;margin-top:3px}
+      .optical-history-tile>small{display:block;color:var(--secondary-text-color);margin-top:9px}
       .temperature-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:15px 0}
       .temperature-summary>div{padding:14px 16px;border:1px solid var(--divider-color);border-radius:10px;background:var(--secondary-background-color)}
       .temperature-summary small{display:block;color:var(--secondary-text-color);margin-bottom:8px}
@@ -544,12 +603,18 @@ class HaOracoPanel extends HTMLElement {
     </style><main><header><div class="brand-wrap"><h1 class="brand"><img src="/ha_oraco_static/brand/icon.svg" alt="" aria-hidden="true"/> HoraInfo</h1><div class="brand-subtitle">${this.escape(switches.length===1?(switches[0].device?.name||switches[0].device?.model||switches[0].host):switches.length+" equipamentos monitorados")}</div></div><button class="refresh" id="refresh">Atualizar</button></header>
     <nav>${tabs.map(([id,label])=>'<button data-tab="'+id+'" class="'+(id===this.tab?"selected":"")+'">'+label+'</button>').join("")}</nav>
     ${body}</main>${this.snapshotDialog()}`;
-    this.shadowRoot.querySelectorAll("[data-tab]").forEach(el => el.addEventListener("click", () => {this.tab=el.dataset.tab;this.render();this.loadCurrentCharts();this.loadSfpTemperature()}));
+    this.shadowRoot.querySelectorAll("[data-tab]").forEach(el => el.addEventListener("click", () => {this.tab=el.dataset.tab;this.render();this.loadCurrentCharts();this.loadSfpTemperature();this.loadSfpOptics()}));
     this.shadowRoot.querySelectorAll("[data-traffic-port]").forEach(btn=>btn.addEventListener("click",()=>{
       this.selectedPort[btn.dataset.switch]=btn.dataset.trafficPort;
       const id=btn.dataset.switch,port=btn.dataset.trafficPort;
       this.fetchHistory(id,"traffic",port,this.chartHours[id+"|"+port]||24);
       if(!this.historyViews[id+"|daily|"+port+"|24|sfp"])this.fetchHistory(id,"daily",port);
+    }));
+    this.shadowRoot.querySelectorAll("[data-sfp-optical-hours]").forEach(select=>select.addEventListener("change",()=>{
+      const id=select.dataset.sfpOpticalHours,hours=Number(select.value);
+      this.sfpOpticalHours[id]=hours;
+      this.render();
+      this.loadSfpOptics();
     }));
     this.shadowRoot.querySelectorAll("[data-sfp-temp-hours]").forEach(select=>select.addEventListener("change",()=>{
       const id=select.dataset.sfpTempHours,hours=Number(select.value);
