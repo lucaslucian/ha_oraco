@@ -27,7 +27,7 @@ class DashboardPreferences:
             raise ValueError("Invalid node")
         if category=="options" and key not in ("default_hours","compact"):
             raise ValueError("Invalid option")
-        if category=="layout":
+        if category=="layout" and value is not None:
             if not isinstance(value,dict) or set(value)!={"x","y"} or any(type(v) not in (int,float) or not 0<=v<=100 for v in value.values()):
                 raise ValueError("Invalid position")
         elif category=="options":
@@ -38,7 +38,7 @@ class DashboardPreferences:
         elif not isinstance(value,str) or len(value)>80:
             raise ValueError("Invalid label")
         item=self.data.setdefault(entry_id,{}).setdefault(category,{})
-        if value=="":
+        if value=="" or value is None:
             item.pop(key,None)
         else:
             item[key]=value
