@@ -15,7 +15,7 @@
 </div>
 
 > [!IMPORTANT]
-> **Versão atual: 0.4.27 · Experimental · Somente leitura.**
+> **Versão atual: 0.4.28 · Experimental · Somente leitura.**
 > A integração já está sendo utilizada com um switch real e coleta dados no Home Assistant. Isso **não equivale a homologação universal**: o firmware e o HTML CGI variam entre modelos. Consulte as [limitações](#limitações-conhecidas) antes de instalar.
 
 ## O que é o HoraInfo?
@@ -40,6 +40,8 @@ O nome apresentado é **HoraInfo**, mas o domínio interno da integração perma
 | **Proteções** | Consulta de isolamento, STP/RSTP global e por porta, Storm Control e agregação de portas |
 | **Outros diagnósticos** | IGMP, DHCP Snooping, Jumbo Frames, saúde das consultas HTTP e estado da base de fabricantes |
 | **Home Assistant** | Sensores e sensores binários nativos, descoberta de interfaces e painel acessível a administradores |
+
+Na versão 0.4.28, o painel recebeu ajustes de contraste, espaçamento, responsividade e legibilidade de tabelas, cartões, modais e gráficos. Os gráficos de tráfego apresentam horários proporcionais às datas efetivas das amostras e rótulos no eixo temporal. Os gráficos térmicos e ópticos exibem média, mínima e máxima por amostra ao apontar para os marcadores. O painel respeita a preferência do sistema por movimento reduzido.
 
 O painel separa **estado atual** e **histórico**. As portas podem ser abertas em um modal com detalhes operacionais, contadores, tráfego histórico e MACs observados. Gráficos de tráfego exibem valores exatos ao apontar para os pontos de medição. Os snapshots podem ser comparados campo a campo (antes/depois), em vez de mostrar apenas a estrutura completa. O modo de exibição compacta e o período padrão de tráfego podem ser salvos. As seções compatíveis possuem um visualizador de alterações em janela modal, organizado por dia, com verificações registradas e detalhes das mudanças.
 
