@@ -42,7 +42,7 @@ class HaOracoPanel extends HTMLElement {
       }
       this.error = null;
     } catch (err) { this.error = String(err); }
-    finally { this.busy = false; this.render(); this.loadCurrentCharts(true); this.loadSfpTemperature(); this.loadSfpOptics(); }
+    finally { this.busy = false; this.render(); this.loadCurrentCharts(true); this.loadSfpTemperature(); this.loadSfpOptics(); this.loadStorageStats(); }
   }
 
   loadCurrentCharts(refresh=false) {
@@ -262,11 +262,40 @@ class HaOracoPanel extends HTMLElement {
       const result=await this._hass.connection.sendMessagePromise({
         type:"ha_oraco/history",entry_id:switchId,mode,port,hours,kind,metric:kind
       });
-      this.historyViews[key]={items:result.items||[],total:result.total||null,min:result.min,max:result.max,average:result.average,count:result.count,loading:false};
+      this.historyViews[key]={...result,items:result.items||[],loading:false};
     } catch(error) {
       this.historyViews[key]={loading:false,error:String(error),items:[]};
     }
     this.render();
+  }
+  loadStorageStats(force=false) {
+    if(!this._hass||!this.data||this.tab!=="system")return;
+    for(const sw of this.data.switches||[]){
+      const key=sw.id+"|storage|__total__|24|sfp";
+      if(force||!this.historyViews[key])this.fetchHistory(sw.id,"storage");
+    }
+  }
+  storagePanel(sw) {
+    const key=sw.id+"|storage|__total__|24|sfp",state=this.historyViews[key];
+    if(!state||state.loading)return '<section class="card"><h3>Armazenamento SQLite</h3><p class="muted">Consultando o banco local…</p></section>';
+    if(state.error)return '<section class="card"><h3>Armazenamento SQLite</h3><p class="muted">'+this.escape(state.error)+'</p></section>';
+    const titles={traffic:"Tráfego detalhado (48 h)",traffic_5m:"Tráfego em blocos (30 dias)",
+      traffic_baselines:"Referências de contadores",daily_traffic:"Totais diários (30 dias)",
+      sfp_temperature_5m:"Temperatura SFP+ (30 dias)",sfp_optical_5m:"Ópticos RX/TX, corrente e tensão (7 dias)",
+      mac_inventory:"Inventário MAC (sem prazo)",snapshots:"Alterações (90 dias)",
+      snapshot_daily:"Resumos de auditoria (90 dias)"};
+    const size=n=>this.prettyBytes(n||0);
+    const rows=Object.entries(state.rows||{}).map(([k,n])=>
+      '<tr><td>'+this.escape(titles[k]||k)+'</td><td>'+this.escape(Number(n).toLocaleString("pt-BR"))+'</td><td>'+
+      (state.table_bytes?.[k]!==undefined?size(state.table_bytes[k]):"—")+'</td></tr>').join("");
+    return '<section class="card"><h3>Armazenamento SQLite</h3>'+
+      '<p class="section-subtitle">Medição real do banco compartilhado por todos os switches. O espaço livre interno já foi reservado pelo SQLite e pode ser reutilizado.</p>'+
+      '<div class="inventory-stats"><div><small>Arquivo SQLite</small><strong>'+size(state.file_bytes)+'</strong></div>'+
+      '<div><small>Dados e índices ocupados</small><strong>'+size(state.used_bytes)+'</strong></div>'+
+      '<div><small>Páginas livres internas</small><strong>'+size(state.free_bytes)+'</strong></div></div>'+
+      '<div class="scroll"><table><thead><tr><th>Tabela</th><th>Registros</th><th>Espaço estimado*</th></tr></thead><tbody>'+rows+'</tbody></table></div>'+
+      '<p class="footnote">*Tamanho de tabela disponível quando o SQLite possui extensão dbstat. Os índices são contabilizados no arquivo, mas podem não estar nesta coluna.</p>'+
+      '<button class="history-action" data-refresh-storage="'+this.escape(sw.id)+'">Atualizar medição</button></section>';
   }
   ranges(switchId,port="__total__") {
     const chosen=this.chartHours[switchId+"|"+port]||this.defaultRange((this.data?.switches||[]).find(x=>x.id===switchId)||{preferences:{}});
@@ -653,6 +682,7 @@ class HaOracoPanel extends HTMLElement {
             '<tr><td>Porta '+this.escape(p.port)+'</td><td>'+stormValue(p.broadcast_kbps)+'</td><td>'+stormValue(p.known_multicast_kbps)+'</td><td>'+stormValue(p.unknown_multicast_kbps)+'</td><td>'+stormValue(p.unknown_unicast_kbps)+'</td></tr>')):'') +this.snapshots(sw.id,'storm_control','Storm Control')+'</section>';
       }
       else if(this.tab === "system") {
+        body+=this.storagePanel(sw);
         const oui=sw.oui||{};
         const sources=Object.entries(oui.sources||{});
         const time=value=>{if(!value)return '—';const d=new Date(value);return Number.isFinite(d.getTime())?d.toLocaleString('pt-BR'):this.escape(value);};
@@ -965,7 +995,7 @@ class HaOracoPanel extends HTMLElement {
       const sw=(this.data?.switches||[]).find(x=>x.id===btn.dataset.renamePort);
       if(sw)this.askName(sw,"ports",btn.dataset.number,this.pref(sw,"ports",btn.dataset.number,""));
     }));
-    this.shadowRoot.querySelectorAll("[data-tab]").forEach(el => el.addEventListener("click", () => {this.tab=el.dataset.tab;this.render();this.loadCurrentCharts();this.loadSfpTemperature();this.loadSfpOptics()}));
+    this.shadowRoot.querySelectorAll("[data-tab]").forEach(el => el.addEventListener("click", () => {this.tab=el.dataset.tab;this.render();this.loadCurrentCharts();this.loadSfpTemperature();this.loadSfpOptics();this.loadStorageStats()}));
     this.shadowRoot.querySelectorAll("[data-traffic-port]").forEach(btn=>btn.addEventListener("click",()=>{
       this.selectedPort[btn.dataset.switch]=btn.dataset.trafficPort;
       const id=btn.dataset.switch,port=btn.dataset.trafficPort;
@@ -1024,6 +1054,7 @@ class HaOracoPanel extends HTMLElement {
       const sw=(this.data?.switches||[])[0];
       if(sw)this.savePreference(sw,"options","compact",!this.pref(sw,"options","compact",false));
     }));
+    this.shadowRoot.querySelectorAll("[data-refresh-storage]").forEach(btn=>btn.addEventListener("click",()=>this.fetchHistory(btn.dataset.refreshStorage,"storage")));
     this.shadowRoot.getElementById("refresh")?.addEventListener("click",()=>this.refresh());
     this.shadowRoot.getElementById("mac-filter")?.addEventListener("change",ev=>{this.macFilter=ev.target.value;this.render()});
   }
