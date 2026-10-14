@@ -15,7 +15,7 @@
 </div>
 
 > [!IMPORTANT]
-> **Versão atual: 0.4.22 · Experimental · Somente leitura.**
+> **Versão atual: 0.4.23 · Experimental · Somente leitura.**
 > A integração já está sendo utilizada com um switch real e coleta dados no Home Assistant. Isso **não equivale a homologação universal**: o firmware e o HTML CGI variam entre modelos. Consulte as [limitações](#limitações-conhecidas) antes de instalar.
 
 ## O que é o HoraInfo?
@@ -33,7 +33,7 @@ O nome apresentado é **HoraInfo**, mas o domínio interno da integração perma
 | **Visão geral** | Portas ativas, taxas atuais RX/TX, picos observados, firmware e visão das interfaces |
 | **Portas** | Estado do link, velocidade negociada, duplex, contadores de bytes e pacotes, taxas RX/TX por interface |
 | **Histórico de tráfego** | Seleção do switch ou de uma porta; períodos de 1 h, 6 h, 12 h, 1, 3, 5, 7, 15 e 30 dias; gráfico de taxas e barras de volume diário |
-| **SFP+ / DDMI** | Presença, tipo, fabricante, part number, número de série, temperatura, tensão, corrente, potência óptica e outros dados, conforme o módulo e o firmware |
+| **SFP+ / DDMI** | Presença, identificação e medidas atuais; histórico de temperatura com mínima, máxima e média, selecionável de 1 hora a 30 dias |
 | **Inventário MAC** | MACs aprendidos, porta, VLAN, classificação, fabricante quando disponível, primeira e última observação |
 | **Mapa de rede** | Nós individuais por MAC e associações observadas com portas, usando nome conhecido ou fabricante quando disponíveis |
 | **VLANs** | Informações de associação e modo das portas (access, trunk ou hybrid), VLAN nativa e listas tagged/untagged quando expostas pelo firmware |
@@ -114,13 +114,14 @@ O banco fica em `<config>/.storage/ha_oraco_history.db`. É um banco **SQLite lo
 | --- | --- |
 | Amostras detalhadas de tráfego | Aproximadamente 48 horas |
 | Médias e picos de tráfego em blocos de 5 minutos | 30 dias |
+| Temperatura SFP+ (média, mínima e máxima em blocos de 5 minutos) | 30 dias |
 | Volumes RX/TX consolidados por dia e por interface | 30 dias |
 | Resumos diários de verificações e snapshots de alterações | 90 dias |
 | Inventário MAC: primeira/última observação, porta, VLAN e fabricante | Histórico persistente; sem retenção temporal automática definida no código |
 
 O histórico de tráfego permite selecionar **1, 6 ou 12 horas; 1, 3, 5, 7, 15 ou 30 dias**. Volumes são derivados de **diferenças válidas dos contadores**, não da simples soma de velocidades instantâneas.
 
-Os snapshots de VLANs, transceptores e proteções são gravados quando há alteração de dados, enquanto os resumos diários registram a última análise e a quantidade de verificações. A consulta é apresentada por dia em **janela modal**. As leituras ópticas têm limitação adicional para evitar excesso de snapshots.
+Os snapshots de VLANs, transceptores e proteções são gravados quando há alteração de dados **exceto temperatura SFP+**, que é tratada como telemetria independente, enquanto os resumos diários registram a última análise e a quantidade de verificações. A consulta é apresentada por dia em **janela modal**. A temperatura SFP+ é registrada separadamente a cada coleta válida e consolidada em intervalos de cinco minutos, com gráfico e extremos. Alterações na temperatura, isoladamente, não geram eventos de configuração. Leituras SFP anteriores à implantação da série não são reconstruídas integralmente a partir de snapshots antigos.
 
 Os dados antigos armazenados antes da instalação da funcionalidade de histórico não podem ser reconstruídos retroativamente. O HoraInfo possui procedimentos de migração do histórico compatível já existente.
 
