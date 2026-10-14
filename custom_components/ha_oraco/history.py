@@ -91,6 +91,13 @@ class HistoryDatabase:
                 PRIMARY KEY (switch_id,kind,timestamp)
             )""")
             db.execute("CREATE INDEX IF NOT EXISTS idx_snapshots_expiry ON snapshots(timestamp)")
+            db.execute("""CREATE TABLE IF NOT EXISTS sfp_temperature_5m (
+                switch_id TEXT NOT NULL, bucket TEXT NOT NULL,
+                sample_count INTEGER NOT NULL, temp_sum REAL NOT NULL,
+                temp_min REAL NOT NULL, temp_max REAL NOT NULL,
+                PRIMARY KEY(switch_id,bucket)
+            )""")
+            db.execute("CREATE INDEX IF NOT EXISTS idx_sfp_temperature_expiry ON sfp_temperature_5m(bucket)")
             db.execute("""CREATE TABLE IF NOT EXISTS snapshot_daily (
                 switch_id TEXT, kind TEXT, day TEXT, checked_at TEXT,
                 checksum TEXT, checks INTEGER, changes INTEGER,
@@ -294,20 +301,43 @@ class HistoryDatabase:
         allowed=("sfp","vlan_ports","isolation","stp_ports","storm_control","stp_global","aggregation")
         if kind not in allowed:
             return
-        encoded=json.dumps(payload,ensure_ascii=False,sort_keys=True,default=str)
+        clean={k:v for k,v in payload.items() if k not in ("temperature_c","temp")} if kind=="sfp" else payload
+        encoded=json.dumps(clean,ensure_ascii=False,sort_keys=True,default=str)
         digest=hashlib.sha256(encoded.encode("utf-8")).hexdigest()
         now=datetime.now(timezone.utc)
         stamp=now.isoformat()
         day=now.astimezone(self.tz).date().isoformat()
         cutoff=(now-timedelta(days=90)).isoformat()
         day_cutoff=(now.astimezone(self.tz)-timedelta(days=90)).date().isoformat()
+        temperature=payload.get("temperature_c") if kind=="sfp" else None
+        valid_temperature=(type(temperature) in (int,float) and math.isfinite(temperature)
+                           and -40 <= temperature <= 125)
+        bucket=now.replace(minute=now.minute//5*5,second=0,microsecond=0).isoformat()
         with self._connect() as db:
-            previous=db.execute("""SELECT checksum,timestamp FROM snapshots
+            if valid_temperature:
+                db.execute("""INSERT INTO sfp_temperature_5m
+                    (switch_id,bucket,sample_count,temp_sum,temp_min,temp_max)
+                    VALUES(?,?,1,?,?,?)
+                    ON CONFLICT(switch_id,bucket) DO UPDATE SET
+                        sample_count=sample_count+1,
+                        temp_sum=temp_sum+excluded.temp_sum,
+                        temp_min=MIN(temp_min,excluded.temp_min),
+                        temp_max=MAX(temp_max,excluded.temp_max)""",
+                    (self.key,bucket,temperature,temperature,temperature))
+                db.execute("DELETE FROM sfp_temperature_5m WHERE bucket < ?",
+                           ((now-timedelta(days=30)).isoformat(),))
+            previous=db.execute("""SELECT checksum,payload FROM snapshots
                 WHERE switch_id=? AND kind=? ORDER BY timestamp DESC LIMIT 1""",
                 (self.key,kind)).fetchone()
-            changed=previous is None or previous[0]!=digest
-            if kind=="sfp" and previous and now-datetime.fromisoformat(previous[1])<timedelta(minutes=5):
-                changed=False
+            if previous and kind=="sfp":
+                try:
+                    last=json.loads(previous[1])
+                    last={k:v for k,v in last.items() if k not in ("temperature_c","temp")}
+                    changed=last!=clean
+                except (ValueError,TypeError):
+                    changed=previous[0]!=digest
+            else:
+                changed=previous is None or previous[0]!=digest
             if changed:
                 db.execute("""INSERT INTO snapshots
                     (switch_id,kind,timestamp,checksum,payload) VALUES (?,?,?,?,?)""",
@@ -321,6 +351,32 @@ class HistoryDatabase:
                 (self.key,kind,day,stamp,digest,int(changed)))
             db.execute("DELETE FROM snapshots WHERE timestamp < ?",(cutoff,))
             db.execute("DELETE FROM snapshot_daily WHERE day < ?",(day_cutoff,))
+
+    def _temperature_history(self, hours):
+        hours=max(1,min(720,int(hours)))
+        cutoff=(datetime.now(timezone.utc)-timedelta(hours=hours)).isoformat()
+        with self._connect() as db:
+            rows=db.execute("""SELECT bucket,sample_count,temp_sum,temp_min,temp_max
+                FROM sfp_temperature_5m WHERE switch_id=? AND bucket>=?
+                ORDER BY bucket""",(self.key,cutoff)).fetchall()
+        if not rows:
+            return {"items":[],"min":None,"max":None,"average":None,"count":0}
+        count=sum(row[1] for row in rows)
+        step=max(1,math.ceil(len(rows)/400))
+        items=[]
+        for i in range(0,len(rows),step):
+            group=rows[i:i+step]
+            n=sum(r[1] for r in group)
+            items.append({"timestamp":group[-1][0],
+                          "avg":round(sum(r[2] for r in group)/n,3),
+                          "min":min(r[3] for r in group),
+                          "max":max(r[4] for r in group)})
+        return {"items":items,"min":min(r[3] for r in rows),
+                "max":max(r[4] for r in rows),
+                "average":round(sum(r[2] for r in rows)/count,3),"count":count}
+
+    async def temperature_history(self,hours=24):
+        return await self.hass.async_add_executor_job(self._temperature_history,int(hours))
 
     async def record_snapshot(self, kind, payload):
         await self.hass.async_add_executor_job(self._record_snapshot,kind,payload)
