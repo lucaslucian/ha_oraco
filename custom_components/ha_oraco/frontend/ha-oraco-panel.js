@@ -710,6 +710,52 @@ class HaOracoPanel extends HTMLElement {
       table tbody tr:hover{background:var(--secondary-background-color)}
       button:focus-visible,input:focus-visible{outline:2px solid var(--primary-color);outline-offset:2px}
 
+
+      /* 0.4.28: consistent, accessible data-heavy dashboard surfaces */
+      :host{--hora-rx:#29ade3;--hora-tx:#49bf87;--hora-warn:#d99b55}
+      main{width:100%;max-width:1560px;padding:clamp(12px,2.2vw,30px)}
+      header{padding:6px 0 12px;border-bottom:1px solid var(--divider-color)}
+      .brand{font-weight:680;letter-spacing:-.6px}
+      .brand-subtitle{font-size:13px;line-height:1.5}
+      nav{gap:3px;scrollbar-width:thin;position:relative}
+      nav button{border-radius:9px 9px 0 0;transition:color .16s,background .16s}
+      nav button.selected{background:var(--secondary-background-color);font-weight:650}
+      .card{border-radius:15px;box-shadow:0 3px 15px rgba(0,0,0,.045);min-width:0}
+      .card h3{letter-spacing:-.2px}
+      .metric{min-height:108px;display:flex;flex-direction:column;justify-content:space-between}
+      .metric strong{font-variant-numeric:tabular-nums}
+      .stats,.columns,.detail-grid,.volume-strip{min-width:0}
+      .scroll{max-width:100%;border-radius:10px;scrollbar-width:thin}
+      table{font-variant-numeric:tabular-nums}
+      th{position:sticky;top:0;background:var(--card-background-color);z-index:1;font-size:11px;letter-spacing:.025em;text-transform:uppercase}
+      tbody tr:nth-child(even){background:color-mix(in srgb,var(--secondary-background-color) 42%,transparent)}
+      td{vertical-align:middle}
+      .history-controls{border-radius:12px;padding:12px;background:var(--secondary-background-color)}
+      .history-select,.inventory-filters select{outline-offset:2px}
+      .history-select:focus-visible,.inventory-filters select:focus-visible{outline:2px solid var(--primary-color)}
+      .traffic-chart,.temperature-chart,.optical-history-tile svg{overflow:visible}
+      .traffic-chart{max-height:240px;border:1px solid var(--divider-color);padding:8px}
+      .temperature-chart{background:var(--secondary-background-color);border:1px solid var(--divider-color);border-radius:12px;padding:10px}
+      .temperature-summary strong,.volume-strip strong{font-variant-numeric:tabular-nums;letter-spacing:-.35px}
+      .optical-history-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+      .optical-history-tile{transition:border-color .15s,box-shadow .15s}
+      .optical-history-tile:hover{border-color:var(--primary-color);box-shadow:0 3px 18px rgba(0,0,0,.08)}
+      .optical-history-tile h4{font-size:14px;letter-spacing:-.1px}
+      .optical-history-tile svg{max-height:210px;margin:12px 0}
+      .optical-history-summary{border-bottom:1px solid var(--divider-color);padding-bottom:12px}
+      .chart-legend,.temp-legend{display:flex;align-items:center;gap:15px;flex-wrap:wrap;line-height:1.6}
+      .port{transition:transform .14s,border-color .14s,background .14s}
+      .port:hover{transform:translateY(-2px);border-color:var(--primary-color)}
+      .audit-dialog{width:min(1100px,100%);max-height:92dvh}
+      .audit-body{overscroll-behavior:contain}
+      .diff-row{border-radius:5px}
+      .diff-row:nth-child(even){background:var(--secondary-background-color)}
+      .board-node:focus-visible{outline:3px solid var(--primary-color);outline-offset:3px}
+      button{transition:background-color .14s,color .14s,border-color .14s}
+      button:disabled{opacity:.45;cursor:not-allowed}
+      @media(max-width:1050px){.stats{grid-template-columns:repeat(2,minmax(0,1fr))}.columns{grid-template-columns:1fr}}
+      @media(max-width:720px){main{padding:12px}.card{padding:14px}.optical-history-grid{grid-template-columns:1fr}.temperature-summary{gap:6px}.temperature-summary>div{padding:10px}.temperature-summary strong{font-size:17px}.history-controls{padding:10px}.stats{gap:9px}.brand-subtitle{padding-left:0}.audit-header{padding:14px}.audit-body{padding:12px}}
+      @media(prefers-reduced-motion:reduce){*,*::before,*::after{transition:none!important;animation:none!important}}
       .columns{display:grid;grid-template-columns:2fr 1fr;gap:16px}.port-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(82px,1fr));gap:10px}.port{background:var(--secondary-background-color);border:1px solid var(--divider-color);padding:12px;border-radius:8px;text-align:center}
       .port.active{border-color:var(--success-color,#4caf50)}.port b{display:block;font-size:16px}.port span{font-size:11px;color:var(--secondary-text-color)}.scroll{overflow:auto}
       .traffic-chart{display:block;width:100%;height:auto;max-height:200px} table{border-collapse:collapse;width:100%;font-size:13px;text-align:left}th,td{padding:12px 10px;border-bottom:1px solid var(--divider-color);white-space:nowrap}th{font-weight:500;color:var(--secondary-text-color)}
