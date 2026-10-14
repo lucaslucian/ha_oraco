@@ -377,7 +377,7 @@ class HaOracoPanel extends HTMLElement {
     const labels=[0,.25,.5,.75,1].map(r=>{
       const index=Math.round(r*(samples.length-1));
       return '<text x="'+xAt(index).toFixed(1)+'" y="180" text-anchor="middle" fill="currentColor" opacity=".65" font-size="10">'+
-        this.escape(new Date(samples[index].timestamp).toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}))+'</text>';
+        this.escape(Number.isFinite(dates[index])?new Date(dates[index]).toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}):"")+'</text>';
     }).join("");
     const grid=[26,70,115,159].map(y=>'<line x1="30" x2="770" y1="'+y+'" y2="'+y+'" stroke="currentColor" opacity=".12" stroke-dasharray="4 5"/>').join("");
     return '<svg class="traffic-chart" viewBox="0 0 800 198" role="img" aria-label="Tráfego RX e TX">'
