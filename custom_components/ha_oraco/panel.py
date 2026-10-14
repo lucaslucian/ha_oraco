@@ -80,7 +80,7 @@ async def history_data(hass, connection, msg):
 @websocket_api.websocket_command({
     vol.Required("type"): "ha_oraco/preference",
     vol.Required("entry_id"): str,
-    vol.Required("category"): vol.In(["ports","devices","layout","options"]),
+    vol.Required("category"): vol.In(["ports","devices","layout","options","thresholds"]),
     vol.Required("key"): str,
     vol.Required("value"): object,
 })
