@@ -478,7 +478,8 @@ class HaOracoPanel extends HTMLElement {
       return '<div class="board-node '+(n.kind==="port"?"board-port":n.kind==="manual"?"board-manual":"board-mac")+
         '" data-board-node="'+this.escape(n.id)+'" data-board-key="'+this.escape(p.key)+'" data-board-switch="'+this.escape(sw.id)+
         '" style="left:'+p.x+'%;top:'+p.y+'%"><b>'+this.escape(name)+'</b><small>'+
-        this.escape(n.kind==="port"?"Porta "+n.id.slice(5):n.kind==="manual"?"Informado manualmente · porta "+n.port:mac)+'</small></div>';
+        this.escape(n.kind==="port"?"Porta "+n.id.slice(5):n.kind==="manual"?"Informado manualmente · porta "+n.port:mac)+'</small>'+
+        (n.kind==="manual"?'<button class="manual-remove" data-remove-manual="'+this.escape(sw.id)+'" data-manual-id="'+this.escape(n.id.slice(7))+'" title="Excluir anotação manual" aria-label="Excluir anotação manual">×</button>':'')+'</div>';
     }).join("");
     return '<div class="board-controls"><span>Arraste os cartões para organizar. As posições ficam salvas no Home Assistant.</span>'+
       '<button class="history-action" data-add-manual="'+this.escape(sw.id)+'">Adicionar equipamento</button>'+
@@ -685,6 +686,7 @@ class HaOracoPanel extends HTMLElement {
       .board-root{position:absolute;left:2%;top:50%;transform:translateY(-50%);font-weight:600;font-size:13px;color:var(--primary-text-color)}
       .board-node{position:absolute;z-index:2;width:125px;min-height:43px;transform:translateY(-50%);padding:8px 10px;border:1px solid var(--primary-color);border-radius:9px;background:var(--card-background-color);color:var(--primary-text-color);cursor:grab;touch-action:none;user-select:none;box-shadow:0 3px 12px rgba(0,0,0,.15)}
       .board-node:active{cursor:grabbing}.board-node b{display:block;font-size:11px;overflow-wrap:anywhere}.board-node small{font-size:10px}
+      .manual-remove{position:absolute;right:1px;top:0;padding:0 4px;font-size:14px;border:0}
       .board-port{border-color:#3bbb84}.board-mac{border-color:#45a7d7}.board-manual{border-style:dashed;border-color:#daa057}
       .header-actions{display:flex;align-items:center;flex-wrap:wrap;gap:8px}
       .compact-view .card{padding:13px;margin-bottom:10px}
@@ -799,6 +801,12 @@ class HaOracoPanel extends HTMLElement {
     </style><main class="${compact?'compact-view':''}"><header><div class="brand-wrap"><h1 class="brand"><img src="/ha_oraco_static/brand/icon.svg" alt="" aria-hidden="true"/> HoraInfo</h1><div class="brand-subtitle">${this.escape(switches.length===1?(switches[0].device?.name||switches[0].device?.model||switches[0].host):switches.length+" equipamentos monitorados")}</div></div><div class="header-actions"><button class="refresh" data-compact-toggle="true">${compact?'Exibição normal':'Exibição compacta'}</button><button class="refresh" id="refresh">Atualizar</button></div></header>
     <nav>${tabs.map(([id,label])=>'<button data-tab="'+id+'" class="'+(id===this.tab?"selected":"")+'">'+label+'</button>').join("")}</nav>
     ${body}</main>${this.snapshotDialog()}${this.portDialog()}`;
+    this.shadowRoot.querySelectorAll("[data-remove-manual]").forEach(btn=>btn.addEventListener("click",event=>{
+      event.stopPropagation();
+      const sw=(this.data?.switches||[]).find(x=>x.id===btn.dataset.removeManual);
+      if(sw&&confirm("Remover este equipamento informado manualmente?"))
+        this.savePreference(sw,"infrastructure",btn.dataset.manualId,null);
+    }));
     this.shadowRoot.querySelectorAll("[data-add-manual]").forEach(btn=>btn.addEventListener("click",async()=>{
       const sw=(this.data?.switches||[]).find(x=>x.id===btn.dataset.addManual);
       if(!sw)return;
@@ -811,7 +819,7 @@ class HaOracoPanel extends HTMLElement {
     }));
     this.shadowRoot.querySelectorAll("[data-board-node]").forEach(node=>{
       node.addEventListener("pointerdown",event=>{
-        if(event.button!==0)return;
+        if(event.button!==0||event.target.closest("[data-remove-manual]"))return;
         const board=node.closest("[data-board]");
         const rect=board.getBoundingClientRect();
         const origin={x:event.clientX,y:event.clientY,left:parseFloat(node.style.left),top:parseFloat(node.style.top)};
