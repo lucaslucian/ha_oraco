@@ -165,10 +165,11 @@ class HistoryDatabase:
             rx, tx = port.get("rx_bps"), port.get("tx_bps")
             rx_ok = isinstance(rx,(int,float)) and not isinstance(rx,bool) and math.isfinite(rx) and 0 <= rx < 1e13
             tx_ok = isinstance(tx,(int,float)) and not isinstance(tx,bool) and math.isfinite(tx) and 0 <= tx < 1e13
-            if rx_ok or tx_ok:
-                # Unavailable direction is excluded from its own peak/volume delta.
-                measured_rx = rx if rx_ok else 0
-                measured_tx = tx if tx_ok else 0
+            if rx_ok and tx_ok:
+                # Do not persist a fabricated zero for an unavailable direction.
+                # Byte-counter daily deltas are still validated independently.
+                measured_rx = rx
+                measured_tx = tx
                 rx_total += measured_rx
                 tx_total += measured_tx
                 raw_rows.append((self.key,timestamp,number,measured_rx,measured_tx))
