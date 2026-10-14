@@ -336,3 +336,58 @@ def test_legacy_sfp_snapshots_with_optical_metrics_do_not_create_false_event():
         assert days[0]["changes"]==0
     with TemporaryDirectory() as root:
         asyncio.run(scenario(root))
+
+def test_optical_7day_series_and_no_snapshot_noise():
+    async def scenario(root):
+        db=load().HistoryDatabase(FakeHass(root),"optical_switch")
+        await db.initialize()
+        initial={"vendor":"ODI","module_present":"Yes","temperature_c":65,
+                 "voltage_v":3.13,"current_ma":0.0,"rx_dbm":-40.0,"tx_dbm":-40.0}
+        await db.record_snapshot("sfp",initial)
+        await db.record_snapshot("sfp",{**initial,
+            "voltage_v":3.18,"current_ma":16.0,"rx_dbm":-17.5,"tx_dbm":1.0})
+        changes=await db.snapshot_history("sfp")
+        assert changes[0]["changes"]==1
+        assert changes[0]["checks"]==2
+        for metric,low,high in (
+            ("voltage_v",3.13,3.18),("current_ma",0.0,16.0),
+            ("rx_dbm",-40.0,-17.5),("tx_dbm",-40.0,1.0)):
+            result=await db.optical_history(metric,24)
+            assert result["count"]==2
+            assert result["min"]==low
+            assert result["max"]==high
+            assert len(result["items"])==1
+        with __import__("sqlite3").connect(db.path) as conn:
+            # Artificially date a bucket >7 days ago to verify pruning on collection.
+            conn.execute("""UPDATE sfp_optical_5m SET bucket='2020-01-01T00:00:00+00:00'
+                WHERE switch_id=? AND metric='voltage_v'""",("optical_switch",))
+        await db.record_snapshot("sfp",{**initial,"voltage_v":3.20})
+        history=await db.optical_history("voltage_v",168)
+        assert history["count"]==1
+        assert history["min"]==3.20
+    with TemporaryDirectory() as root:
+        asyncio.run(scenario(root))
+
+
+def test_optical_rejects_invalid_values_and_survives_restart():
+    async def scenario(root):
+        factory=load().HistoryDatabase
+        db=factory(FakeHass(root),"optical_valid")
+        await db.initialize()
+        for invalid in (None,float("nan"),float("inf"),-50,1000,True,"3.2"):
+            await db.record_snapshot("sfp",{"vendor":"ODI","voltage_v":invalid})
+        assert (await db.optical_history("voltage_v",24))["count"]==0
+        await db.record_snapshot("sfp",{"vendor":"ODI","voltage_v":3.22,
+                                        "current_ma":0.0})
+        other=factory(FakeHass(root),"optical_valid")
+        await other.initialize()
+        assert (await other.optical_history("voltage_v",24))["count"]==1
+        assert (await other.optical_history("current_ma",24))["min"]==0
+        try:
+            await other.optical_history("bad_metric",24)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("Unsupported optical metric should be rejected")
+    with TemporaryDirectory() as root:
+        asyncio.run(scenario(root))
