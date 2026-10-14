@@ -24,7 +24,7 @@ class DashboardPreferences:
             raise ValueError("Invalid port")
         if category=="devices" and not re.fullmatch(r"[0-9A-Fa-f:]{17}",key):
             raise ValueError("Invalid MAC")
-        if category=="layout" and not re.fullmatch(r"(?:mac:[0-9A-Fa-f:]{17}\\|(?:\\d{1,4})?|port:\d{1,4})",key):
+        if category=="layout" and not re.fullmatch(r"(?:mac:[0-9A-Fa-f:]{17}\|(?:\d{1,4})?|port:\d{1,4})",key):
             raise ValueError("Invalid node")
         if category=="thresholds" and key not in ("temperature_c","voltage_v","current_ma","rx_dbm","tx_dbm"):
             raise ValueError("Invalid optical metric")
