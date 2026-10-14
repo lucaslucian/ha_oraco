@@ -15,7 +15,7 @@
 </div>
 
 > [!IMPORTANT]
-> **Versão atual: 0.4.30 · Experimental · Somente leitura.**
+> **Versão atual: 0.4.31 · Experimental · Somente leitura.**
 > A integração já está sendo utilizada com um switch real e coleta dados no Home Assistant. Isso **não equivale a homologação universal**: o firmware e o HTML CGI variam entre modelos. Consulte as [limitações](#limitações-conhecidas) antes de instalar.
 
 ## O que é o HoraInfo?
@@ -122,7 +122,7 @@ As preferências de interface, apelidos, posições do mapa e limites ópticos f
 | Resumos diários de verificações e snapshots de alterações | 90 dias |
 | Inventário MAC: primeira/última observação, porta, VLAN e fabricante | Histórico persistente; sem retenção temporal automática definida no código |
 
-O histórico de tráfego permite selecionar **1, 6 ou 12 horas; 1, 3, 5, 7, 15 ou 30 dias**. Volumes são derivados de **diferenças válidas dos contadores**, não da simples soma de velocidades instantâneas.
+A versão 0.4.31 corrige a passagem de parâmetros opcionais das requisições WebSocket de histórico; só o histórico óptico envia a identificação de uma métrica. O histórico de tráfego permite selecionar **1, 6 ou 12 horas; 1, 3, 5, 7, 15 ou 30 dias**. Volumes são derivados de **diferenças válidas dos contadores**, não da simples soma de velocidades instantâneas.
 
 O modal de snapshots carrega até 180 eventos mais recentes por categoria e sinaliza quando existem mais eventos; os totais diários continuam refletindo o histórico retido no banco. Os snapshots de VLANs, transceptores e proteções são gravados quando há alteração de dados **exceto temperatura SFP+**, que é tratada como telemetria independente, enquanto os resumos diários registram a última análise e a quantidade de verificações. A consulta é apresentada por dia em **janela modal**. A temperatura SFP+ é registrada separadamente a cada coleta válida e consolidada em intervalos de cinco minutos, com gráfico e extremos por 30 dias. Tensão, corrente do laser e potências ópticas RX/TX possuem quatro gráficos independentes com mínimo, média e máximo, períodos selecionáveis de 1 hora a 7 dias e retenção de sete dias. Alterações em temperatura, tensão, corrente do laser e potências RX/TX, isoladamente, não geram eventos de configuração. A série temporal específica de temperatura permanece no SQLite por 30 dias. Eventos importantes como presença/ausência do módulo, perda de sinal, mudança de identificação óptica e alterações em VLAN, isolamento ou STP continuam sendo auditados. Leituras SFP anteriores à implantação da série não são reconstruídas integralmente a partir de snapshots antigos.
 
