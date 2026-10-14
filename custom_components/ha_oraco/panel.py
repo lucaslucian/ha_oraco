@@ -43,7 +43,7 @@ async def dashboard_data(hass, connection, msg):
 @websocket_api.websocket_command({
     vol.Required("type"): "ha_oraco/history",
     vol.Required("entry_id"): str,
-    vol.Required("mode"): vol.In(["traffic","daily","snapshots"]),
+    vol.Required("mode"): vol.In(["traffic","daily","snapshots","sfp_temperature"]),
     vol.Optional("port", default="__total__"): str,
     vol.Optional("hours", default=24): vol.All(vol.Coerce(int),vol.Range(min=1,max=720)),
     vol.Optional("kind", default="sfp"): str,
@@ -61,10 +61,14 @@ async def history_data(hass, connection, msg):
                 "total":await database.period_totals(msg["port"],msg["hours"])}
     elif msg["mode"]=="daily":
         result=await database.daily_totals(msg["port"])
+    elif msg["mode"]=="sfp_temperature":
+        result=await database.temperature_history(msg["hours"])
     else:
         result=await database.snapshot_history(msg["kind"])
     if msg["mode"]=="traffic":
         connection.send_result(msg["id"],{"items":result["series"],"total":result["total"]})
+    elif msg["mode"]=="sfp_temperature":
+        connection.send_result(msg["id"],result)
     else:
         connection.send_result(msg["id"],{"items":result})
 
