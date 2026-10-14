@@ -93,7 +93,7 @@ async def register_panel(hass):
         frontend_url_path="ha-oraco",
         config={"_panel_custom": {
             "name": "ha-oraco-panel",
-            "module_url": PANEL_URL + "?v=0.4.24",
+            "module_url": PANEL_URL + "?v=0.4.25",
             "embed_iframe": False,
             "trust_external": False,
         }},
