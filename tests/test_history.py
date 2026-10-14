@@ -236,7 +236,7 @@ def test_sfp_temperature_independent_from_change_audit():
         assert series["max"]==68.50
         assert abs(series["average"]-66.375)<0.0001
         assert len(series["items"])==1
-        await db.record_snapshot("sfp",{**base,"temperature_c":70.0,"voltage_v":3.25})
+        await db.record_snapshot("sfp",{**base,"temperature_c":70.0,"voltage_v":3.25,"module_present":"No"})
         days=await db.snapshot_history("sfp")
         assert days[0]["changes"]==2
         assert len(days[0]["events"])==2
