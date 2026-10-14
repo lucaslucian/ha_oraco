@@ -10,6 +10,7 @@ class HaOracoPanel extends HTMLElement {
     this.samples = {};
     this.selectedPort = {};
     this.chartHours = {};
+    this.sfpTemperatureHours = {};
     this.historyViews = {};
     this.historyPanels = {};
     this.snapshotModal = null;
@@ -36,7 +37,7 @@ class HaOracoPanel extends HTMLElement {
       }
       this.error = null;
     } catch (err) { this.error = String(err); }
-    finally { this.busy = false; this.render(); this.loadCurrentCharts(true); }
+    finally { this.busy = false; this.render(); this.loadCurrentCharts(true); this.loadSfpTemperature(); }
   }
 
   loadCurrentCharts(refresh=false) {
@@ -49,6 +50,14 @@ class HaOracoPanel extends HTMLElement {
       const dailyKey=sw.id+"|daily|"+port+"|24|sfp";
       if(refresh||!this.historyViews[trafficKey])this.fetchHistory(sw.id,"traffic",port,hours);
       if(!this.historyViews[dailyKey])this.fetchHistory(sw.id,"daily",port);
+    }
+  }
+  loadSfpTemperature() {
+    if(!this._hass||!this.data||this.tab!=="sfp")return;
+    for(const sw of this.data.switches||[]){
+      const hours=this.sfpTemperatureHours[sw.id]||24;
+      const key=sw.id+"|sfp_temperature|__total__|"+hours+"|sfp";
+      if(!this.historyViews[key])this.fetchHistory(sw.id,"sfp_temperature","__total__",hours);
     }
   }
   sfpLabel(key) {
@@ -73,6 +82,48 @@ class HaOracoPanel extends HTMLElement {
     if(units[key]&&Number.isFinite(Number(value)))return Number(value).toLocaleString("pt-BR",
       {minimumFractionDigits:units[key][1],maximumFractionDigits:units[key][1]})+units[key][0];
     return this.escape(value);
+  }
+  sfpTemperatureChart(sw) {
+    const hours=this.sfpTemperatureHours[sw.id]||24;
+    const key=sw.id+"|sfp_temperature|__total__|"+hours+"|sfp";
+    const result=this.historyViews[key];
+    const options=[[1,"1 hora"],[6,"6 horas"],[12,"12 horas"],[24,"1 dia"],
+      [72,"3 dias"],[120,"5 dias"],[168,"7 dias"],[360,"15 dias"],[720,"30 dias"]];
+    const select='<label>Período<select class="history-select" data-sfp-temp-hours="'+this.escape(sw.id)+'">'+
+      options.map(([value,label])=>'<option value="'+value+'" '+(hours===value?'selected':'')+'>'+label+'</option>').join('')+'</select></label>';
+    let content='<p class="muted">Carregando histórico de temperatura…</p>';
+    if(result&&!result.loading){
+      if(result.error) content='<p class="muted">'+this.escape(result.error)+'</p>';
+      else {
+        const items=result.items||[];
+        const format=n=>Number(n).toLocaleString("pt-BR",{minimumFractionDigits:1,maximumFractionDigits:1})+" °C";
+        if(!items.length) content='<p class="muted">Sem medições nesse período. Os registros começam após a atualização.</p>';
+        else {
+          const lo=Number(result.min),hi=Number(result.max);
+          const minY=Math.floor(lo-2),maxY=Math.ceil(hi+2);
+          const px=10,py=15,w=880,h=240;
+          const x=i=>px+(items.length===1?w/2:i*w/(items.length-1));
+          const y=t=>py+h-(Number(t)-minY)/(maxY-minY||1)*h;
+          const plotted=items.map((p,i)=>x(i)+","+y(p.avg)).join(" ");
+          const lowLine=items.map((p,i)=>x(i)+","+y(p.min)).join(" ");
+          const highLine=items.map((p,i)=>x(i)+","+y(p.max)).join(" ");
+          const bands=Array.from({length:5},(_,i)=>{const value=minY+(maxY-minY)*i/4;const yy=y(value);
+            return '<line x1="10" y1="'+yy+'" x2="890" y2="'+yy+'" stroke="currentColor" opacity=".1"/>'+
+              '<text x="16" y="'+(yy-5)+'" fill="currentColor" opacity=".6" font-size="11">'+format(value)+'</text>';}).join("");
+          content='<div class="temperature-summary">'+
+            '<div><small>Mínima</small><strong>'+format(lo)+'</strong></div>'+
+            '<div><small>Máxima</small><strong>'+format(hi)+'</strong></div>'+
+            '<div><small>Média</small><strong>'+format(result.average)+'</strong></div></div>'+
+            '<div class="temperature-chart"><svg viewBox="0 0 900 280" role="img" aria-label="Histórico da temperatura SFP com valores médios, mínimos e máximos">'+
+            bands+'<polyline fill="none" stroke="#42b8ec" stroke-width="2.8" points="'+plotted+'"/>'+
+            '<polyline fill="none" stroke="#86a1b7" stroke-width="1.5" stroke-dasharray="5 5" points="'+lowLine+'"/>'+
+            '<polyline fill="none" stroke="#eeac65" stroke-width="1.5" stroke-dasharray="5 5" points="'+highLine+'"/></svg></div>'+
+            '<div class="temp-legend"><span>Média — azul</span><span>Mínima — cinza</span><span>Máxima — laranja</span><span>'+result.count+' leituras</span></div>'+
+            '<p class="footnote">Temperatura consolidada em blocos de 5 minutos. Leituras e extremos retidos por até 30 dias.</p>';
+        }
+      }
+    }
+    return '<section class="card"><h3>Histórico de temperatura</h3><div class="history-controls">'+select+'</div>'+content+'</section>';
   }
   renderSfp(sw,compact=false) {
     const raw=sw.sfp?.sfp||{};
@@ -111,7 +162,7 @@ class HaOracoPanel extends HTMLElement {
       const result=await this._hass.connection.sendMessagePromise({
         type:"ha_oraco/history",entry_id:switchId,mode,port,hours,kind
       });
-      this.historyViews[key]={items:result.items||[],total:result.total||null,loading:false};
+      this.historyViews[key]={items:result.items||[],total:result.total||null,min:result.min,max:result.max,average:result.average,count:result.count,loading:false};
     } catch(error) {
       this.historyViews[key]={loading:false,error:String(error),items:[]};
     }
@@ -295,7 +346,7 @@ class HaOracoPanel extends HTMLElement {
           +'<label>Período'+this.ranges(sw.id,selected)+'</label></div>'
           +this.trafficChart(sw.id,selected==="__total__"?null:selected)+this.dailyTable(sw.id,selected)+'</section>';
       }
-      else if(this.tab === "sfp") body += '<section class="card"><h3>Transceptor óptico</h3><p class="section-subtitle">Medições e dados de identificação disponíveis no firmware</p>'+this.renderSfp(sw)+this.snapshots(sw.id,'sfp','SFP+')+'</section>';
+      else if(this.tab === "sfp") body += '<section class="card"><h3>Transceptor óptico · agora</h3><p class="section-subtitle">Medições e identificação atuais do módulo</p>'+this.renderSfp(sw)+this.snapshots(sw.id,'sfp','SFP+')+'</section>'+this.sfpTemperatureChart(sw);
       else if(this.tab === "mac") {
         const macData=sw.mac||{};
         const macRows=macData.mac_history_entries||macData.mac_entries||[];
@@ -446,6 +497,13 @@ class HaOracoPanel extends HTMLElement {
       .history-controls{display:flex;gap:18px;align-items:end;flex-wrap:wrap;margin:17px 0}
       .history-controls label{display:flex;flex-direction:column;gap:7px;font-size:12px;color:var(--secondary-text-color)}
       .history-select{background:var(--card-background-color);border:1px solid var(--divider-color);border-radius:9px;color:var(--primary-text-color);padding:10px 14px;min-width:165px;font:inherit}
+      .temperature-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:15px 0}
+      .temperature-summary>div{padding:14px 16px;border:1px solid var(--divider-color);border-radius:10px;background:var(--secondary-background-color)}
+      .temperature-summary small{display:block;color:var(--secondary-text-color);margin-bottom:8px}
+      .temperature-summary strong{font-size:22px}
+      .temperature-chart{width:100%;overflow:hidden;margin:14px 0}
+      .temperature-chart svg{display:block;width:100%;height:auto;max-height:300px}
+      .temp-legend{display:flex;gap:15px;flex-wrap:wrap;color:var(--secondary-text-color);font-size:12px}
       .volume-strip{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:15px 0}
       .volume-strip>div{padding:16px 18px;background:var(--secondary-background-color);border-radius:10px;border:1px solid var(--divider-color)}
       .volume-strip small{display:block;color:var(--secondary-text-color);margin-bottom:8px}
@@ -486,12 +544,17 @@ class HaOracoPanel extends HTMLElement {
     </style><main><header><div class="brand-wrap"><h1 class="brand"><img src="/ha_oraco_static/brand/icon.svg" alt="" aria-hidden="true"/> HoraInfo</h1><div class="brand-subtitle">${this.escape(switches.length===1?(switches[0].device?.name||switches[0].device?.model||switches[0].host):switches.length+" equipamentos monitorados")}</div></div><button class="refresh" id="refresh">Atualizar</button></header>
     <nav>${tabs.map(([id,label])=>'<button data-tab="'+id+'" class="'+(id===this.tab?"selected":"")+'">'+label+'</button>').join("")}</nav>
     ${body}</main>${this.snapshotDialog()}`;
-    this.shadowRoot.querySelectorAll("[data-tab]").forEach(el => el.addEventListener("click", () => {this.tab=el.dataset.tab;this.render();this.loadCurrentCharts()}));
+    this.shadowRoot.querySelectorAll("[data-tab]").forEach(el => el.addEventListener("click", () => {this.tab=el.dataset.tab;this.render();this.loadCurrentCharts();this.loadSfpTemperature()}));
     this.shadowRoot.querySelectorAll("[data-traffic-port]").forEach(btn=>btn.addEventListener("click",()=>{
       this.selectedPort[btn.dataset.switch]=btn.dataset.trafficPort;
       const id=btn.dataset.switch,port=btn.dataset.trafficPort;
       this.fetchHistory(id,"traffic",port,this.chartHours[id+"|"+port]||24);
       if(!this.historyViews[id+"|daily|"+port+"|24|sfp"])this.fetchHistory(id,"daily",port);
+    }));
+    this.shadowRoot.querySelectorAll("[data-sfp-temp-hours]").forEach(select=>select.addEventListener("change",()=>{
+      const id=select.dataset.sfpTempHours,hours=Number(select.value);
+      this.sfpTemperatureHours[id]=hours;
+      this.fetchHistory(id,"sfp_temperature","__total__",hours);
     }));
     this.shadowRoot.querySelectorAll("[data-chart-hours-select]").forEach(btn=>btn.addEventListener("change",()=>{
       const id=btn.dataset.chartHoursSelect,port=btn.dataset.port,hours=Number(btn.value);
