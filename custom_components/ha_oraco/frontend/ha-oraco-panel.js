@@ -376,6 +376,43 @@ class HaOracoPanel extends HTMLElement {
       '<button class="history-action" data-rename-port="'+this.escape(sw.id)+'" data-number="'+this.escape(number)+'">Editar apelido</button></div>'+
       '</div></section></div>';
   }
+  topologyBoard(sw) {
+    const nodes=(sw.topology?.nodes||[]).filter(n=>n.kind==="port"||n.kind==="learned_mac");
+    const ports=nodes.filter(n=>n.kind==="port");
+    const macs=nodes.filter(n=>n.kind==="learned_mac");
+    const edges=sw.topology?.edges||[];
+    const naturalY=(i,count)=>Math.min(94,Math.max(4,((i+1)/(count+1))*95));
+    const byId=new Map();
+    const pos=(n,i,count)=>{
+      const mac=n.mac||"";
+      const key=n.kind==="port"?n.id:"mac:"+mac;
+      const recorded=this.pref(sw,"layout",key,null);
+      return {x:recorded?.x??(n.kind==="port"?33:72),
+              y:recorded?.y??naturalY(i,count),key};
+    };
+    ports.forEach((n,i)=>byId.set(n.id,pos(n,i,ports.length)));
+    macs.forEach((n,i)=>byId.set(n.id,pos(n,i,macs.length)));
+    const height=Math.max(580,macs.length*64,ports.length*66);
+    const lines=edges.filter(e=>byId.has(e.to)&&byId.has(e.from)).map(e=>{
+      const a=byId.get(e.from),b=byId.get(e.to);
+      return '<line data-wire="'+this.escape(e.from)+'|'+this.escape(e.to)+'" x1="'+((a.x+6)*10)+'" y1="'+(a.y*10)+'" x2="'+((b.x+6)*10)+'" y2="'+(b.y*10)+'" stroke="#4d8d9e" opacity=".65" stroke-width="2"/>';
+    }).join("");
+    const cards=nodes.map(n=>{
+      const p=byId.get(n.id);
+      const mac=n.mac||"";
+      const name=n.kind==="port"?this.pref(sw,"ports",n.id.slice(5),n.label):
+        (this.pref(sw,"devices",mac,"")||(n.vendor&&n.vendor!=="Desconhecido"?n.vendor:mac));
+      return '<div class="board-node '+(n.kind==="port"?"board-port":"board-mac")+
+        '" data-board-node="'+this.escape(n.id)+'" data-board-key="'+this.escape(p.key)+'" data-board-switch="'+this.escape(sw.id)+
+        '" style="left:'+p.x+'%;top:'+p.y+'%"><b>'+this.escape(name)+'</b><small>'+
+        this.escape(n.kind==="port"?"Porta "+n.id.slice(5):mac)+'</small></div>';
+    }).join("");
+    return '<div class="board-controls"><span>Arraste os cartões para organizar. As posições ficam salvas no Home Assistant.</span>'+
+      '<button class="history-action" data-reset-board="'+this.escape(sw.id)+'">Restaurar posições automáticas</button></div>'+
+      '<div class="topology-board" data-board="'+this.escape(sw.id)+'" style="height:'+height+'px">'+
+      '<div class="board-root">Switch · '+this.escape(sw.host)+'</div>'+
+      '<svg viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-hidden="true">'+lines+'</svg>'+cards+'</div>';
+  }
   topologyMap(sw) {
     const ports=Object.values(sw.ports||{}).sort((a,b)=>Number(a.port)-Number(b.port));
     const nodes=sw.topology?.nodes||[],edges=sw.topology?.edges||[];
@@ -476,7 +513,7 @@ class HaOracoPanel extends HTMLElement {
           +matches.map(e=>'<tr><td><button class="mac-name-button" data-name-mac="'+this.escape(sw.id)+'" data-mac="'+this.escape(e.mac)+'" title="Editar nome do dispositivo">'+this.escape(this.pref(sw,"devices",e.mac,"Nomear"))+'</button><small>'+this.escape(e.mac)+'</small></td><td>'+this.escape(this.pref(sw,"ports",String(e.port),"Porta "+e.port))+'</td><td>'+this.escape(e.vlan)+'</td><td>'+this.escape(e.vendor||e.classification)+'</td><td>'+stamp(e.first_seen)+'</td><td>'+stamp(e.last_seen)+'</td></tr>').join('')
           +'</tbody></table></div><p class="footnote">Exibindo até 200 registros recentes do histórico do switch. MACs administrados localmente não permitem atribuição confiável por OUI.</p></section>';
       }
-      else if(this.tab === "topology") body += '<section class="card"><h3>Mapa lógico da rede</h3>'+this.topologyMap(sw)+'</section>';
+      else if(this.tab === "topology") body += '<section class="card"><h3>Mapa lógico · edição de posições</h3><p class="section-subtitle">Organização visual personalizável; conexões representam MACs aprendidos, não enlaces físicos confirmados.</p>'+this.topologyBoard(sw)+'<details><summary>Visualização automática por porta</summary>'+this.topologyMap(sw)+'</details></section>';
       else if(this.tab === "protection") {
         const net=sw.network||{};
         const iso=Object.values(net.isolation?.ports||{}).sort((a,b)=>Number(a.port)-Number(b.port));
@@ -559,6 +596,13 @@ class HaOracoPanel extends HTMLElement {
       .metric small{display:block;font-size:12px;margin-bottom:11px;color:var(--secondary-text-color)}
       .metric strong{font-size:clamp(21px,2vw,28px);font-weight:650;letter-spacing:-.5px}
       .metric strong.small{font-size:16px;line-height:1.5}
+      .board-controls{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:9px;margin:12px 0;font-size:12px;color:var(--secondary-text-color)}
+      .topology-board{position:relative;min-width:650px;overflow:hidden;border-radius:12px;border:1px solid var(--divider-color);background:var(--secondary-background-color)}
+      .topology-board svg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+      .board-root{position:absolute;left:2%;top:2%;font-weight:600;font-size:13px;color:var(--primary-text-color)}
+      .board-node{position:absolute;z-index:2;width:125px;min-height:43px;transform:translateY(-50%);padding:8px 10px;border:1px solid var(--primary-color);border-radius:9px;background:var(--card-background-color);color:var(--primary-text-color);cursor:grab;touch-action:none;user-select:none;box-shadow:0 3px 12px rgba(0,0,0,.15)}
+      .board-node:active{cursor:grabbing}.board-node b{display:block;font-size:11px;overflow-wrap:anywhere}.board-node small{font-size:10px}
+      .board-port{border-color:#3bbb84}.board-mac{border-color:#45a7d7}
       .inventory-filters{display:flex;flex-wrap:wrap;gap:9px;margin:14px 0}
       .inventory-filters input,.inventory-filters select{border:1px solid var(--divider-color);border-radius:9px;padding:9px;background:var(--card-background-color);color:var(--primary-text-color);min-width:170px}
       .mac-name-button{padding:3px 0;border:0;color:var(--primary-color);font-weight:600;text-align:left}
@@ -668,6 +712,43 @@ class HaOracoPanel extends HTMLElement {
     </style><main><header><div class="brand-wrap"><h1 class="brand"><img src="/ha_oraco_static/brand/icon.svg" alt="" aria-hidden="true"/> HoraInfo</h1><div class="brand-subtitle">${this.escape(switches.length===1?(switches[0].device?.name||switches[0].device?.model||switches[0].host):switches.length+" equipamentos monitorados")}</div></div><button class="refresh" id="refresh">Atualizar</button></header>
     <nav>${tabs.map(([id,label])=>'<button data-tab="'+id+'" class="'+(id===this.tab?"selected":"")+'">'+label+'</button>').join("")}</nav>
     ${body}</main>${this.snapshotDialog()}${this.portDialog()}`;
+    this.shadowRoot.querySelectorAll("[data-board-node]").forEach(node=>{
+      node.addEventListener("pointerdown",event=>{
+        if(event.button!==0)return;
+        const board=node.closest("[data-board]");
+        const rect=board.getBoundingClientRect();
+        const origin={x:event.clientX,y:event.clientY,left:parseFloat(node.style.left),top:parseFloat(node.style.top)};
+        node.setPointerCapture(event.pointerId);
+        const move=e=>{
+          const x=Math.max(0,Math.min(88,origin.left+(e.clientX-origin.x)/rect.width*100));
+          const y=Math.max(4,Math.min(96,origin.top+(e.clientY-origin.y)/rect.height*100));
+          node.style.left=x+"%";node.style.top=y+"%";
+          const id=node.dataset.boardNode,lines=board.querySelectorAll("[data-wire]");
+          for(const line of lines){
+            const [from,to]=line.dataset.wire.split("|");
+            if(from===id){line.setAttribute("x1",(x+6)*10);line.setAttribute("y1",y*10);}
+            if(to===id){line.setAttribute("x2",(x+6)*10);line.setAttribute("y2",y*10);}
+          }
+        };
+        const up=()=>{
+          node.removeEventListener("pointermove",move);
+          node.removeEventListener("pointerup",up);
+          const sw=(this.data?.switches||[]).find(x=>x.id===node.dataset.boardSwitch);
+          if(sw&&((Math.abs(parseFloat(node.style.left)-origin.left)>0.2)||(Math.abs(parseFloat(node.style.top)-origin.top)>0.2)))
+            this.savePreference(sw,"layout",node.dataset.boardKey,
+              {x:Math.round(parseFloat(node.style.left)*10)/10,y:Math.round(parseFloat(node.style.top)*10)/10});
+        };
+        node.addEventListener("pointermove",move);
+        node.addEventListener("pointerup",up);
+        node.addEventListener("pointercancel",up);
+      });
+    });
+    this.shadowRoot.querySelectorAll("[data-reset-board]").forEach(btn=>btn.addEventListener("click",async()=>{
+      const sw=(this.data?.switches||[]).find(x=>x.id===btn.dataset.resetBoard);
+      if(!sw)return;
+      const layout=sw.preferences?.layout||{};
+      for(const [key] of Object.entries(layout))await this.savePreference(sw,"layout",key,{x:33,y:50});
+    }));
     this.shadowRoot.querySelectorAll("[data-open-port]").forEach(el=>el.addEventListener("click",()=>{
       this.portModal={switchId:el.dataset.openPort,number:el.dataset.portNumber};this.render();
     }));
