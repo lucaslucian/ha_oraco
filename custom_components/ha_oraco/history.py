@@ -371,6 +371,7 @@ class HistoryDatabase:
                         temp_min=MIN(temp_min,excluded.temp_min),
                         temp_max=MAX(temp_max,excluded.temp_max)""",
                     (self.key,bucket,temperature,temperature,temperature))
+            if kind=="sfp":
                 db.execute("DELETE FROM sfp_temperature_5m WHERE bucket < ?",
                            ((now-timedelta(days=30)).isoformat(),))
             previous=db.execute("""SELECT checksum,payload FROM snapshots
@@ -545,6 +546,31 @@ class HistoryDatabase:
 
     async def daily_totals(self, port="__total__", days=365):
         return await self.hass.async_add_executor_job(self._daily_totals,str(port),int(days))
+
+    def _storage_summary(self):
+        """Actual SQLite size, free pages and per-table row counts (all switches)."""
+        tables=("traffic","traffic_5m","traffic_baselines","daily_traffic",
+                "sfp_temperature_5m","sfp_optical_5m","mac_inventory",
+                "snapshots","snapshot_daily")
+        with self._connect() as db:
+            page_size=db.execute("PRAGMA page_size").fetchone()[0]
+            pages=db.execute("PRAGMA page_count").fetchone()[0]
+            free=db.execute("PRAGMA freelist_count").fetchone()[0]
+            counts={name:db.execute(f"SELECT COUNT(*) FROM {name}").fetchone()[0] for name in tables}
+            table_sizes={}
+            try:
+                for name,used in db.execute("SELECT name,SUM(pgsize) FROM dbstat GROUP BY name"):
+                    if name in tables:
+                        table_sizes[name]=used
+            except sqlite3.OperationalError:
+                pass
+        return {"file_bytes":pages*page_size,"free_bytes":free*page_size,
+                "used_bytes":(pages-free)*page_size,"rows":counts,
+                "table_bytes":table_sizes,
+                "scope":"whole_database","measured_at":datetime.now(timezone.utc).isoformat()}
+
+    async def storage_summary(self):
+        return await self.hass.async_add_executor_job(self._storage_summary)
 
     def _snapshot_history(self,kind):
         allowed=("sfp","vlan_ports","isolation","stp_ports","storm_control","stp_global","aggregation")
