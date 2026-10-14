@@ -15,7 +15,7 @@
 </div>
 
 > [!IMPORTANT]
-> **Versão atual: 0.4.25 · Experimental · Somente leitura.**
+> **Versão atual: 0.4.26 · Experimental · Somente leitura.**
 > A integração já está sendo utilizada com um switch real e coleta dados no Home Assistant. Isso **não equivale a homologação universal**: o firmware e o HTML CGI variam entre modelos. Consulte as [limitações](#limitações-conhecidas) antes de instalar.
 
 ## O que é o HoraInfo?
@@ -31,21 +31,21 @@ O nome apresentado é **HoraInfo**, mas o domínio interno da integração perma
 | Área | Recursos disponíveis |
 | --- | --- |
 | **Visão geral** | Portas ativas, taxas atuais RX/TX, picos observados, firmware e visão das interfaces |
-| **Portas** | Estado do link, velocidade negociada, duplex, contadores de bytes e pacotes, taxas RX/TX por interface |
+| **Portas** | Estado do link, velocidade negociada, duplex, contadores e taxas RX/TX; modal com histórico e MACs por porta |
 | **Histórico de tráfego** | Seleção do switch ou de uma porta; períodos de 1 h, 6 h, 12 h, 1, 3, 5, 7, 15 e 30 dias; gráfico de taxas e barras de volume diário |
 | **SFP+ / DDMI** | Presença, identificação e medidas atuais; histórico de temperatura com mínima, máxima e média, selecionável de 1 hora a 30 dias |
-| **Inventário MAC** | MACs aprendidos, porta, VLAN, classificação, fabricante quando disponível, primeira e última observação |
-| **Mapa de rede** | Nós individuais por MAC e associações observadas com portas, usando nome conhecido ou fabricante quando disponíveis |
+| **Inventário MAC** | MACs aprendidos, porta, VLAN, fabricante e datas; filtros por porta, VLAN e fabricante; apelidos personalizados |
+| **Mapa de rede** | Nós individuais por MAC, posições arrastáveis e salvas, nomes personalizados e equipamentos intermediários documentados manualmente |
 | **VLANs** | Informações de associação e modo das portas (access, trunk ou hybrid), VLAN nativa e listas tagged/untagged quando expostas pelo firmware |
 | **Proteções** | Consulta de isolamento, STP/RSTP global e por porta, Storm Control e agregação de portas |
 | **Outros diagnósticos** | IGMP, DHCP Snooping, Jumbo Frames, saúde das consultas HTTP e estado da base de fabricantes |
 | **Home Assistant** | Sensores e sensores binários nativos, descoberta de interfaces e painel acessível a administradores |
 
-O painel separa **estado atual** e **histórico**. As seções compatíveis possuem um visualizador de alterações em janela modal, organizado por dia, com verificações registradas e detalhes das mudanças.
+O painel separa **estado atual** e **histórico**. As portas podem ser abertas em um modal com detalhes operacionais, contadores, tráfego histórico e MACs observados. Gráficos de tráfego exibem valores exatos ao apontar para os pontos de medição. Os snapshots podem ser comparados campo a campo (antes/depois), em vez de mostrar apenas a estrutura completa. O modo de exibição compacta e o período padrão de tráfego podem ser salvos. As seções compatíveis possuem um visualizador de alterações em janela modal, organizado por dia, com verificações registradas e detalhes das mudanças.
 
 ### Mapa e identificação dos dispositivos
 
-Cada endereço MAC observado na tabela de encaminhamento é representado individualmente. O HoraInfo pode apresentar o **nome conhecido** do registro, ou o **fabricante inferido pelo prefixo OUI**, ao lado do MAC.
+Cada endereço MAC observado na tabela de encaminhamento é representado individualmente. Os nós podem ser arrastados; as posições e os apelidos são armazenados no Home Assistant. Também é possível cadastrar equipamentos intermediários associados manualmente a uma porta. Essas associações são indicadas de forma distinta e **não são detecção física automática**. O HoraInfo pode apresentar o **nome conhecido** do registro, ou o **fabricante inferido pelo prefixo OUI**, ao lado do MAC.
 
 **Fabricante não é nome de host:** a base IEEE/OUI não revela automaticamente nomes como `Notebook`, `OpenWrt` ou `HomeAssistant`. Também não há descoberta física por LLDP implementada. O mapa indica **em qual porta o switch aprendeu cada MAC**, mas não comprova que o dispositivo está conectado diretamente à porta — outros switches ou equipamentos podem existir no caminho.
 
@@ -108,7 +108,7 @@ A integração **reutiliza a sessão autenticada** enquanto válida e tenta recu
 
 ### Retenção e histórico SQLite
 
-O banco fica em `<config>/.storage/ha_oraco_history.db`. É um banco **SQLite local**; não requer servidor externo.
+As preferências de interface, apelidos, posições do mapa e limites ópticos ficam no armazenamento local do Home Assistant (`ha_oraco_dashboard_preferences`), separadas das leituras. O banco fica em `<config>/.storage/ha_oraco_history.db`. É um banco **SQLite local**; não requer servidor externo.
 
 | Tipo de registro | Política implementada |
 | --- | --- |
@@ -130,7 +130,7 @@ Os dados antigos armazenados antes da instalação da funcionalidade de históri
 
 A integração tenta atualizar arquivos IEEE **MA-L, MA-M e MA-S**, mantém cache local e reclassifica identidades conhecidas quando novos prefixos são obtidos. Caso as fontes IEEE não respondam, há uma tentativa alternativa por espelho público de dados OUI, cuja cobertura pode ser menor.
 
-A seção **Sistema → Base IEEE de fabricantes** permite verificar quantidade de prefixos disponíveis, última atualização e eventuais falhas. Um MAC pode continuar sem fabricante por indisponibilidade da base, ausência de correspondência ou por ser um endereço administrado localmente.
+Os indicadores ópticos podem utilizar limites personalizados por equipamento, salvos no Home Assistant. **Esses valores são definidos pelo usuário, não são limites certificados automaticamente para o transceptor.** A seção **Sistema → Base IEEE de fabricantes** permite verificar quantidade de prefixos disponíveis, última atualização e eventuais falhas. Um MAC pode continuar sem fabricante por indisponibilidade da base, ausência de correspondência ou por ser um endereço administrado localmente.
 
 ## Compatibilidade e limitações conhecidas
 
@@ -138,7 +138,7 @@ A seção **Sistema → Base IEEE de fabricantes** permite verificar quantidade 
 - **HTML CGI variável:** algumas páginas apresentam marcação HTML incorreta. Os parsers incluem tratamento para formatos já observados, mas outras variantes podem exigir ajustes.
 - **Somente leitura:** não inclui ações de reboot, reset, atualização de firmware, mudança de VLAN, isolamento, STP ou outros parâmetros.
 - **SFP+:** disponibilidade e precisão dos dados dependem do firmware, do módulo e da resposta da página óptica. Ausência de potência óptica **não implica necessariamente ausência física do módulo**.
-- **Topologia:** não descobre automaticamente enlaces físicos ou nomes de host por LLDP, DHCP ou mDNS. Exibe evidências provenientes da tabela MAC.
+- **Topologia:** não descobre automaticamente enlaces físicos ou nomes de host por LLDP, DHCP ou mDNS. Exibe evidências provenientes da tabela MAC e permite anotações manuais claramente identificadas. As posições salvas são preferências visuais, não medições de rede.
 - **VLANs:** não garante a descoberta de todas as configurações de PVID e recursos avançados do switch.
 - **Alertas:** limites ópticos e alertas avançados ainda não estão implementados.
 - **Ícones:** apesar de haver arquivos locais de marca em `custom_components/ha_oraco/brand/`, algumas telas do HACS ou a entidade de atualização podem exibir *Icon not available*; isso depende do mecanismo de resolução de ícones dessas interfaces.
