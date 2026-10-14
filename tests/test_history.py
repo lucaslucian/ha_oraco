@@ -429,3 +429,28 @@ def test_sfp_temp_pruning_runs_even_without_valid_temperature():
             assert connection.execute("SELECT COUNT(*) FROM sfp_temperature_5m").fetchone()[0]==0
     with TemporaryDirectory() as root:
         asyncio.run(scenario(root))
+
+def test_snapshot_history_indicates_truncated_event_list():
+    async def scenario(root):
+        db=load().HistoryDatabase(FakeHass(root),"many_events")
+        await db.initialize()
+        from datetime import datetime,timedelta,timezone
+        from sqlite3 import connect
+        import hashlib,json
+        with connect(db.path) as conn:
+            base=datetime.now(timezone.utc)-timedelta(minutes=190)
+            day=datetime.now(db.tz).date().isoformat()
+            for i in range(190):
+                payload=json.dumps({"sequence":i})
+                ts=(base+timedelta(minutes=i)).isoformat()
+                conn.execute("INSERT INTO snapshots VALUES(?,?,?,?,?)",
+                    ("many_events","sfp",ts,hashlib.sha256(payload.encode()).hexdigest(),payload))
+            conn.execute("INSERT INTO snapshot_daily VALUES(?,?,?,?,?,?,?)",
+                ("many_events","sfp",day,datetime.now(timezone.utc).isoformat(),"hash",190,190))
+        entries=await db.snapshot_history("sfp")
+        assert entries[0]["events_limited"] is True
+        assert entries[0]["events_total"]==190
+        assert entries[0]["events_returned"]==180
+        assert entries[0]["changes"]==190
+    with TemporaryDirectory() as root:
+        asyncio.run(scenario(root))
