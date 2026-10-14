@@ -33,7 +33,7 @@ class DashboardPreferences:
                 raise ValueError("Invalid manual node")
             if not isinstance(value["name"],str) or not 1<=len(value["name"])<=80:
                 raise ValueError("Invalid manual node name")
-            if not isinstance(value["port"],str) or not re.fullmatch(r"\\d{1,4}",value["port"]):
+            if not isinstance(value["port"],str) or not re.fullmatch(r"\d{1,4}",value["port"]):
                 raise ValueError("Invalid manual port")
         if category=="thresholds" and key not in ("temperature_c","voltage_v","current_ma","rx_dbm","tx_dbm"):
             raise ValueError("Invalid optical metric")
