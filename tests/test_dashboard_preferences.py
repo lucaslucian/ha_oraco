@@ -39,7 +39,7 @@ def test_persist_names_layout_ranges_and_thresholds(monkeypatch):
         await prefs.set_item("switch1","ports","2","ONU")
         await prefs.set_item("switch1","devices","E8:4C:4A:21:A8:5D","Camera")
         await prefs.set_item("switch1","layout","mac:E8:4C:4A:21:A8:5D|1",{"x":72.5,"y":40})
-        await prefs.set_item("switch1","infrastructure","nabc",{"name":"Switch adicional","port":"2"})
+        await prefs.set_item("switch1","infrastructure","nabc",{"name":"Switch adicional","port":"2","macs":["E8:4C:4A:21:A8:5D"]})
         await prefs.set_item("switch1","layout","manual:nabc",{"x":44,"y":62})
         await prefs.set_item("switch1","options","default_hours",168)
         await prefs.set_item("switch1","options","compact",True)
@@ -52,6 +52,7 @@ def test_persist_names_layout_ranges_and_thresholds(monkeypatch):
         assert sw["layout"]["mac:E8:4C:4A:21:A8:5D|1"]["x"]==72.5
         assert sw["options"]["compact"] is True
         assert sw["infrastructure"]["nabc"]["port"]=="2"
+        assert sw["infrastructure"]["nabc"]["macs"]==["E8:4C:4A:21:A8:5D"]
         assert sw["thresholds"]["temperature_c"]["high"]==85
         await restored.set_item("switch1","layout","mac:E8:4C:4A:21:A8:5D|1",None)
         assert "mac:E8:4C:4A:21:A8:5D|1" not in restored.for_switch("switch1")["layout"]
@@ -78,6 +79,7 @@ def test_rejects_unsafe_or_invalid_preferences(monkeypatch):
             ("ports","1","x"*81),
             ("infrastructure","unsafe key",{"name":"X","port":"1"}),
             ("infrastructure","safe",{"name":"X","port":"bad"}),
+            ("infrastructure","safe",{"name":"X","port":"2","macs":["invalid"]}),
         ]
         for category,key,value in invalid:
             try:
