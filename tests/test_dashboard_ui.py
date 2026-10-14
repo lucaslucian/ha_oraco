@@ -33,3 +33,13 @@ def test_switch_remains_monitor_only():
     assert "Configurar limites" in text
     assert "Informado manualmente" in text
     assert "Conexões físicas" not in text or "lógica" in text
+
+
+def test_chart_visuals_and_responsive_layout():
+    js=(ROOT/"frontend"/"ha-oraco-panel.js").read_text(encoding="utf-8")
+    for feature in ("xAt(i)", "const timeline=", "prefers-reduced-motion",
+                    ".optical-history-grid{grid-template-columns:repeat(2",
+                    "font-variant-numeric:tabular-nums",
+                    ".audit-dialog{width:min(1100px"):
+        assert feature in js
+    assert "data-wire-from" in js
