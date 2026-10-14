@@ -15,7 +15,7 @@
 </div>
 
 > [!IMPORTANT]
-> **Versão atual: 0.4.26 · Experimental · Somente leitura.**
+> **Versão atual: 0.4.27 · Experimental · Somente leitura.**
 > A integração já está sendo utilizada com um switch real e coleta dados no Home Assistant. Isso **não equivale a homologação universal**: o firmware e o HTML CGI variam entre modelos. Consulte as [limitações](#limitações-conhecidas) antes de instalar.
 
 ## O que é o HoraInfo?
@@ -45,7 +45,7 @@ O painel separa **estado atual** e **histórico**. As portas podem ser abertas e
 
 ### Mapa e identificação dos dispositivos
 
-Cada endereço MAC observado na tabela de encaminhamento é representado individualmente. Os nós podem ser arrastados; as posições e os apelidos são armazenados no Home Assistant. Também é possível cadastrar equipamentos intermediários associados manualmente a uma porta. Essas associações são indicadas de forma distinta e **não são detecção física automática**. O HoraInfo pode apresentar o **nome conhecido** do registro, ou o **fabricante inferido pelo prefixo OUI**, ao lado do MAC.
+Cada endereço MAC observado na tabela de encaminhamento é representado individualmente. Os nós podem ser arrastados; as posições e os apelidos são armazenados no Home Assistant. Também é possível cadastrar equipamentos intermediários associados manualmente a uma porta e associar MACs conhecidos a esses equipamentos. As ligações informadas pelo usuário aparecem tracejadas, distintas das observações reais da tabela MAC. Essas associações são indicadas de forma distinta e **não são detecção física automática**. O HoraInfo pode apresentar o **nome conhecido** do registro, ou o **fabricante inferido pelo prefixo OUI**, ao lado do MAC.
 
 **Fabricante não é nome de host:** a base IEEE/OUI não revela automaticamente nomes como `Notebook`, `OpenWrt` ou `HomeAssistant`. Também não há descoberta física por LLDP implementada. O mapa indica **em qual porta o switch aprendeu cada MAC**, mas não comprova que o dispositivo está conectado diretamente à porta — outros switches ou equipamentos podem existir no caminho.
 
