@@ -15,7 +15,7 @@
 </div>
 
 > [!IMPORTANT]
-> **Versão atual: 0.4.28 · Experimental · Somente leitura.**
+> **Versão atual: 0.4.29 · Experimental · Somente leitura.**
 > A integração já está sendo utilizada com um switch real e coleta dados no Home Assistant. Isso **não equivale a homologação universal**: o firmware e o HTML CGI variam entre modelos. Consulte as [limitações](#limitações-conhecidas) antes de instalar.
 
 ## O que é o HoraInfo?
@@ -61,7 +61,7 @@ Os sensores **MACs privados (atuais)** e **MACs privados (histórico)** represen
 
 As taxas RX/TX e os volumes acumulados são calculados a partir das diferenças entre contadores de bytes fornecidos pelo switch. O HoraInfo rejeita leituras inválidas, contadores reiniciados, possíveis rollovers, intervalos longos sem observação e variações incompatíveis com a capacidade da porta. RX e TX são avaliados separadamente.
 
-**Tráfego durante períodos sem observação não é reconstruído nem estimado.** Após uma interrupção, pode haver lacunas no volume contabilizado. O objetivo é impedir picos artificiais e somas incorretas.
+**Quando uma das direções RX/TX está indisponível, o registro de taxa conjunto é descartado, em vez de gravar um zero artificial; os volumes por contador são avaliados independentemente. Tráfego durante períodos sem observação não é reconstruído nem estimado.** Após uma interrupção, pode haver lacunas no volume contabilizado. O objetivo é impedir picos artificiais e somas incorretas.
 
 ## Instalação
 
@@ -110,7 +110,7 @@ A integração **reutiliza a sessão autenticada** enquanto válida e tenta recu
 
 ### Retenção e histórico SQLite
 
-As preferências de interface, apelidos, posições do mapa e limites ópticos ficam no armazenamento local do Home Assistant (`ha_oraco_dashboard_preferences`), separadas das leituras. O banco fica em `<config>/.storage/ha_oraco_history.db`. É um banco **SQLite local**; não requer servidor externo.
+As preferências de interface, apelidos, posições do mapa e limites ópticos ficam no armazenamento local do Home Assistant (`ha_oraco_dashboard_preferences`), separadas das leituras. Na aba **Sistema → Armazenamento SQLite** é possível consultar o tamanho efetivo do arquivo, espaço livre interno reutilizável, linhas por tabela e, quando o SQLite suporta `dbstat`, a ocupação aproximada das próprias tabelas. O resumo é do banco completo, compartilhado pelos switches cadastrados. Uma simulação de retenção completa (nove portas físicas, mais totalização, coleta de 30 s) ocupou cerca de **34 MiB** para as principais séries e seus índices; não é uma previsão garantida nem medição do seu ambiente. O inventário MAC não tem retenção automática e as alterações dependem da atividade/configuração. O SQLite normalmente reutiliza páginas livres sem reduzir imediatamente o tamanho físico do arquivo. O banco fica em `<config>/.storage/ha_oraco_history.db`. É um banco **SQLite local**; não requer servidor externo.
 
 | Tipo de registro | Política implementada |
 | --- | --- |
