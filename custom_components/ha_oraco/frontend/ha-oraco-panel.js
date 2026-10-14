@@ -437,8 +437,14 @@ class HaOracoPanel extends HTMLElement {
   }
   topologyBoard(sw) {
     const nodes=(sw.topology?.nodes||[]).filter(n=>n.kind==="port"||n.kind==="learned_mac");
+    const manual=Object.entries(this.pref(sw,"infrastructure","",{})||{});
+    const documented=Object.entries(sw.preferences?.infrastructure||{}).map(([id,value])=>({
+      id:"manual:"+id,kind:"manual",label:value.name,port:String(value.port||"")
+    }));
+    nodes.push(...documented);
     const ports=nodes.filter(n=>n.kind==="port");
     const macs=nodes.filter(n=>n.kind==="learned_mac");
+    const handwritten=nodes.filter(n=>n.kind==="manual");
     const edges=sw.topology?.edges||[];
     const naturalY=(i,count)=>Math.min(94,Math.max(4,((i+1)/(count+1))*95));
     const byId=new Map();
@@ -451,23 +457,32 @@ class HaOracoPanel extends HTMLElement {
     };
     ports.forEach((n,i)=>byId.set(n.id,pos(n,i,ports.length)));
     macs.forEach((n,i)=>byId.set(n.id,pos(n,i,macs.length)));
+    handwritten.forEach((n,i)=>byId.set(n.id,{...pos(n,i,handwritten.length),
+      x:this.pref(sw,"layout",n.id,null)?.x??60,
+      y:this.pref(sw,"layout",n.id,null)?.y??naturalY(i,handwritten.length)}));
     byId.set("switch",{x:7,y:50});
-    const height=Math.max(580,macs.length*64,ports.length*66);
+    const height=Math.max(580,(macs.length+handwritten.length)*64,ports.length*66);
+    for(const n of handwritten){
+      if(byId.has("port:"+n.port))edges.push({
+        from:"port:"+n.port,to:n.id,relation:"manual"
+      });
+    }
     const lines=edges.filter(e=>byId.has(e.to)&&byId.has(e.from)).map(e=>{
       const a=byId.get(e.from),b=byId.get(e.to);
-      return '<line data-wire-from="'+this.escape(e.from)+'" data-wire-to="'+this.escape(e.to)+'" x1="'+((a.x+6)*10)+'" y1="'+(a.y*10)+'" x2="'+((b.x+6)*10)+'" y2="'+(b.y*10)+'" stroke="#4d8d9e" opacity=".65" stroke-width="2"/>';
+      return '<line data-wire-from="'+this.escape(e.from)+'" data-wire-to="'+this.escape(e.to)+'" x1="'+((a.x+6)*10)+'" y1="'+(a.y*10)+'" x2="'+((b.x+6)*10)+'" y2="'+(b.y*10)+'" stroke="#4d8d9e" opacity=".65" stroke-width="2" '/>';
     }).join("");
     const cards=nodes.map(n=>{
       const p=byId.get(n.id);
       const mac=n.mac||"";
-      const name=n.kind==="port"?this.pref(sw,"ports",n.id.slice(5),n.label):
+      const name=n.kind==="manual"?n.label:n.kind==="port"?this.pref(sw,"ports",n.id.slice(5),n.label):
         (this.pref(sw,"devices",mac,"")||(n.vendor&&n.vendor!=="Desconhecido"?n.vendor:mac));
-      return '<div class="board-node '+(n.kind==="port"?"board-port":"board-mac")+
+      return '<div class="board-node '+(n.kind==="port"?"board-port":n.kind==="manual"?"board-manual":"board-mac")+
         '" data-board-node="'+this.escape(n.id)+'" data-board-key="'+this.escape(p.key)+'" data-board-switch="'+this.escape(sw.id)+
         '" style="left:'+p.x+'%;top:'+p.y+'%"><b>'+this.escape(name)+'</b><small>'+
-        this.escape(n.kind==="port"?"Porta "+n.id.slice(5):mac)+'</small></div>';
+        this.escape(n.kind==="port"?"Porta "+n.id.slice(5):n.kind==="manual"?"Informado manualmente · porta "+n.port:mac)+'</small></div>';
     }).join("");
     return '<div class="board-controls"><span>Arraste os cartões para organizar. As posições ficam salvas no Home Assistant.</span>'+
+      '<button class="history-action" data-add-manual="'+this.escape(sw.id)+'">Adicionar equipamento</button>'+
       '<button class="history-action" data-reset-board="'+this.escape(sw.id)+'">Restaurar posições automáticas</button></div>'+
       '<div class="topology-board" data-board="'+this.escape(sw.id)+'" style="height:'+height+'px">'+
       '<div class="board-root">Switch · '+this.escape(sw.host)+'</div>'+
@@ -668,10 +683,10 @@ class HaOracoPanel extends HTMLElement {
       .board-controls{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:9px;margin:12px 0;font-size:12px;color:var(--secondary-text-color)}
       .topology-board{position:relative;min-width:650px;overflow:hidden;border-radius:12px;border:1px solid var(--divider-color);background:var(--secondary-background-color)}
       .topology-board svg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
-      .board-root{position:absolute;left:2%;top:2%;font-weight:600;font-size:13px;color:var(--primary-text-color)}
+      .board-root{position:absolute;left:2%;top:50%;transform:translateY(-50%);font-weight:600;font-size:13px;color:var(--primary-text-color)}
       .board-node{position:absolute;z-index:2;width:125px;min-height:43px;transform:translateY(-50%);padding:8px 10px;border:1px solid var(--primary-color);border-radius:9px;background:var(--card-background-color);color:var(--primary-text-color);cursor:grab;touch-action:none;user-select:none;box-shadow:0 3px 12px rgba(0,0,0,.15)}
       .board-node:active{cursor:grabbing}.board-node b{display:block;font-size:11px;overflow-wrap:anywhere}.board-node small{font-size:10px}
-      .board-port{border-color:#3bbb84}.board-mac{border-color:#45a7d7}
+      .board-port{border-color:#3bbb84}.board-mac{border-color:#45a7d7}.board-manual{border-style:dashed;border-color:#daa057}
       .header-actions{display:flex;align-items:center;flex-wrap:wrap;gap:8px}
       .compact-view .card{padding:13px;margin-bottom:10px}
       .compact-view .stats{gap:9px}.compact-view .metric strong{font-size:20px}
@@ -785,6 +800,16 @@ class HaOracoPanel extends HTMLElement {
     </style><main class="${compact?'compact-view':''}"><header><div class="brand-wrap"><h1 class="brand"><img src="/ha_oraco_static/brand/icon.svg" alt="" aria-hidden="true"/> HoraInfo</h1><div class="brand-subtitle">${this.escape(switches.length===1?(switches[0].device?.name||switches[0].device?.model||switches[0].host):switches.length+" equipamentos monitorados")}</div></div><div class="header-actions"><button class="refresh" data-compact-toggle="true">${compact?'Exibição normal':'Exibição compacta'}</button><button class="refresh" id="refresh">Atualizar</button></div></header>
     <nav>${tabs.map(([id,label])=>'<button data-tab="'+id+'" class="'+(id===this.tab?"selected":"")+'">'+label+'</button>').join("")}</nav>
     ${body}</main>${this.snapshotDialog()}${this.portDialog()}`;
+    this.shadowRoot.querySelectorAll("[data-add-manual]").forEach(btn=>btn.addEventListener("click",async()=>{
+      const sw=(this.data?.switches||[]).find(x=>x.id===btn.dataset.addManual);
+      if(!sw)return;
+      const name=prompt("Nome do equipamento de infraestrutura:", "");
+      if(!name||!name.trim())return;
+      const port=prompt("Porta associada (informação manual, não detectada fisicamente):","");
+      if(!port||!Object.hasOwn(sw.ports||{},port.trim())){this.error="Informe uma porta existente.";this.render();return;}
+      const id="n"+Date.now().toString(36);
+      await this.savePreference(sw,"infrastructure",id,{name:name.trim().slice(0,80),port:port.trim()});
+    }));
     this.shadowRoot.querySelectorAll("[data-board-node]").forEach(node=>{
       node.addEventListener("pointerdown",event=>{
         if(event.button!==0)return;
