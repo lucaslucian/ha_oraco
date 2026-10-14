@@ -214,3 +214,63 @@ def test_old_snapshot_events_not_hidden_by_zero_change_daily_summary():
         assert len(rows[0]["events"])==1
     with TemporaryDirectory() as root:
         asyncio.run(scenario(root))
+
+def test_sfp_temperature_independent_from_change_audit():
+    async def scenario(root):
+        db=load().HistoryDatabase(FakeHass(root),"sfp_series")
+        await db.initialize()
+        base={"vendor":"ODI","part_number":"DFP-34X-2IY3","module_present":"Yes",
+              "temperature_c":64.25,"temp":"64-64","voltage_v":3.12}
+        await db.record_snapshot("sfp",base)
+        await db.record_snapshot("sfp",{**base,"temperature_c":68.50,"temp":"68-128"})
+        days=await db.snapshot_history("sfp")
+        assert len(days)==1
+        assert days[0]["checks"]==2
+        assert days[0]["changes"]==1
+        assert len(days[0]["events"])==1
+        assert "temperature_c" not in days[0]["events"][0]["data"]
+        assert "temp" not in days[0]["events"][0]["data"]
+        series=await db.temperature_history(24)
+        assert series["count"]==2
+        assert series["min"]==64.25
+        assert series["max"]==68.50
+        assert abs(series["average"]-66.375)<0.0001
+        assert len(series["items"])==1
+        await db.record_snapshot("sfp",{**base,"temperature_c":70.0,"voltage_v":3.25})
+        days=await db.snapshot_history("sfp")
+        assert days[0]["changes"]==2
+        assert len(days[0]["events"])==2
+    with TemporaryDirectory() as root:
+        asyncio.run(scenario(root))
+
+def test_sfp_temperature_rejects_invalid_measurements_and_survives_restart():
+    async def scenario(root):
+        factory=load().HistoryDatabase
+        db=factory(FakeHass(root),"sfp_valid")
+        await db.initialize()
+        for invalid in (None, float("nan"), 300, -90, True, "65"):
+            await db.record_snapshot("sfp",{"vendor":"ODI","temperature_c":invalid})
+        assert (await db.temperature_history(24))["count"]==0
+        await db.record_snapshot("sfp",{"vendor":"ODI","temperature_c":65.1})
+        reopened=factory(FakeHass(root),"sfp_valid")
+        await reopened.initialize()
+        result=await reopened.temperature_history(24)
+        assert result["count"]==1
+        assert result["min"]==result["max"]==65.1
+        # A former snapshot containing raw temperature must not trigger a
+        # new event simply because the parser now removes temperature.
+        from sqlite3 import connect
+        import json,hashlib
+        with connect(reopened.path) as con:
+            con.execute("DELETE FROM snapshots WHERE switch_id=? AND kind='sfp'",("sfp_valid",))
+            legacy={"vendor":"ODI","temperature_c":62.0,"temp":"62-0"}
+            encoded=json.dumps(legacy,sort_keys=True)
+            digest=hashlib.sha256(encoded.encode()).hexdigest()
+            from datetime import datetime,timezone
+            con.execute("INSERT INTO snapshots VALUES(?,?,?,?,?)",(
+                "sfp_valid","sfp",datetime.now(timezone.utc).isoformat(),digest,encoded))
+        old_count=(await reopened.snapshot_history("sfp"))[0]["changes"]
+        await reopened.record_snapshot("sfp",{"vendor":"ODI","temperature_c":67.0})
+        assert (await reopened.snapshot_history("sfp"))[0]["changes"]==old_count
+    with TemporaryDirectory() as root:
+        asyncio.run(scenario(root))
