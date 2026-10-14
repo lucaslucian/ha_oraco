@@ -375,7 +375,12 @@ class HaOracoPanel extends HTMLElement {
     return '<svg class="traffic-chart" viewBox="0 0 800 185" role="img" aria-label="Tráfego RX e TX">'
       +grid+'<text x="28" y="17" fill="currentColor" opacity=".7" font-size="12">'+rate(peak)+'</text><polygon points="'+area("rx")+'" fill="#29ade3" opacity=".08"/><polygon points="'+area("tx")+'" fill="#49bf87" opacity=".07"/><polyline points="'+points("rx")+'" fill="none" stroke="#29ade3" stroke-width="2.7" stroke-linejoin="round"/>'
       +'<polyline points="'+points("tx")+'" fill="none" stroke="#49bf87" stroke-width="2.7" stroke-linejoin="round"/></svg>'
-      +'<div class="chart-legend"><span>● RX — azul</span><span>● TX — verde</span><span>'
+      +samples.filter((_,i)=>i%Math.max(1,Math.ceil(samples.length/90))===0).map(v=>{
+        const i=samples.indexOf(v),x=(i*740/Math.max(1,samples.length-1)+30).toFixed(1);
+        return ["rx","tx"].map(key=>'<circle cx="'+x+'" cy="'+(159-v[key]/peak*134).toFixed(1)+
+          '" r="3" fill="'+(key==="rx"?"#29ade3":"#49bf87")+'"><title>'+
+          this.escape(stamp(v)+" · "+key.toUpperCase()+": "+rate(v[key]))+'</title></circle>').join("");
+      }).join("")      +'<div class="chart-legend"><span>● RX — azul</span><span>● TX — verde</span><span>'
       +samples.length+' amostras '+(persisted.length?'registradas no banco':'desta sessão')+'</span><span>'+stamp(samples[0])+' — '+stamp(samples[samples.length-1])+'</span></div>';
   }
   pref(sw,category,key,fallback="") {
@@ -419,6 +424,9 @@ class HaOracoPanel extends HTMLElement {
       row("TX atual",fmt(port.tx_bps)+" bit/s")+row("Bytes RX",fmt(port.rx_bytes))+
       row("Bytes TX",fmt(port.tx_bytes))+row("Pacotes RX",fmt(port.rx_packets))+
       row("Pacotes TX",fmt(port.tx_packets))+'</div>'+
+      '<h3 class="spaced">Tráfego histórico</h3>'+this.trafficChart(sw.id,String(number))+
+      '<div class="history-controls"><label>Intervalo '+this.ranges(sw.id,String(number))+'</label></div>'+
+      this.dailyTable(sw.id,String(number))+
       '<h3 class="spaced">MACs aprendidos ('+devices.length+')</h3>'+
       (devices.length?'<div class="detail-grid">'+devices.map(d=>row("VLAN "+(d.vlan||"—"),
         this.pref(sw,"devices",d.mac,d.vendor||d.mac)+" · "+d.mac)).join("")+'</div>':
@@ -436,13 +444,14 @@ class HaOracoPanel extends HTMLElement {
     const byId=new Map();
     const pos=(n,i,count)=>{
       const mac=n.mac||"";
-      const key=n.kind==="port"?n.id:"mac:"+mac;
+      const key=n.id;
       const recorded=this.pref(sw,"layout",key,null);
       return {x:recorded?.x??(n.kind==="port"?33:72),
               y:recorded?.y??naturalY(i,count),key};
     };
     ports.forEach((n,i)=>byId.set(n.id,pos(n,i,ports.length)));
     macs.forEach((n,i)=>byId.set(n.id,pos(n,i,macs.length)));
+    byId.set("switch",{x:7,y:50});
     const height=Math.max(580,macs.length*64,ports.length*66);
     const lines=edges.filter(e=>byId.has(e.to)&&byId.has(e.from)).map(e=>{
       const a=byId.get(e.from),b=byId.get(e.to);
@@ -814,6 +823,10 @@ class HaOracoPanel extends HTMLElement {
     }));
     this.shadowRoot.querySelectorAll("[data-open-port]").forEach(el=>el.addEventListener("click",()=>{
       this.portModal={switchId:el.dataset.openPort,number:el.dataset.portNumber};this.render();
+      const id=el.dataset.openPort,port=el.dataset.portNumber;
+      const sw=(this.data?.switches||[]).find(x=>x.id===id);
+      this.fetchHistory(id,"traffic",port,this.chartHours[id+"|"+port]||this.defaultRange(sw||{preferences:{}}));
+      if(!this.historyViews[id+"|daily|"+port+"|24|sfp"])this.fetchHistory(id,"daily",port);
     }));
     this.shadowRoot.querySelectorAll("[data-close-port]").forEach(btn=>btn.addEventListener("click",()=>{
       this.portModal=null;this.render();
