@@ -582,9 +582,13 @@ class HistoryDatabase:
             days=db.execute("""SELECT day,checked_at,checks,changes FROM snapshot_daily
                 WHERE switch_id=? AND kind=? AND day>=?
                 ORDER BY day DESC LIMIT 90""",(self.key,kind,cutoff)).fetchall()
+            event_total=db.execute("""SELECT COUNT(*) FROM snapshots
+                WHERE switch_id=? AND kind=? AND timestamp>=?""",
+                (self.key,kind,(datetime.now(timezone.utc)-timedelta(days=90)).isoformat())).fetchone()[0]
             events=db.execute("""SELECT timestamp,payload FROM snapshots
-                WHERE switch_id=? AND kind=? ORDER BY timestamp DESC LIMIT 180""",
-                (self.key,kind)).fetchall()
+                WHERE switch_id=? AND kind=? AND timestamp>=?
+                ORDER BY timestamp DESC LIMIT 180""",
+                (self.key,kind,(datetime.now(timezone.utc)-timedelta(days=90)).isoformat())).fetchall()
         by_day={}
         for timestamp,payload in events:
             try:
@@ -594,7 +598,10 @@ class HistoryDatabase:
                 continue
         return [{"day":day,"checked_at":last,"checks":checks,
                  "changes":max(changes or 0,len(by_day.get(day,[]))),
-                 "events":by_day.get(day,[])} for day,last,checks,changes in days]
+                 "events":by_day.get(day,[]),
+                 "events_limited":event_total>len(events),
+                 "events_returned":len(events),
+                 "events_total":event_total} for day,last,checks,changes in days]
 
     async def snapshot_history(self,kind):
         return await self.hass.async_add_executor_job(self._snapshot_history,kind)
