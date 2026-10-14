@@ -15,6 +15,22 @@ from zoneinfo import ZoneInfo
 from .traffic_guard import counter_delta, valid_counter
 
 
+# Continuous optical measurements belong to telemetry, not change auditing.
+# Retain module identity, presence and loss-of-signal transitions as events.
+SFP_TELEMETRY_FIELDS = frozenset((
+    "temperature_c", "temp", "voltage_v", "voltage", "current_ma", "current",
+    "rx_dbm", "tx_dbm", "rxpower", "txpower", "rx_power", "tx_power",
+    "input_power_dbm", "output_power_dbm",
+))
+
+
+def _snapshot_state(kind, payload):
+    if kind != "sfp":
+        return payload
+    return {key: value for key, value in payload.items()
+            if key not in SFP_TELEMETRY_FIELDS}
+
+
 class HistoryDatabase:
     def __init__(self, hass, key):
         self.hass = hass
@@ -301,7 +317,7 @@ class HistoryDatabase:
         allowed=("sfp","vlan_ports","isolation","stp_ports","storm_control","stp_global","aggregation")
         if kind not in allowed:
             return
-        clean={k:v for k,v in payload.items() if k not in ("temperature_c","temp")} if kind=="sfp" else payload
+        clean=_snapshot_state(kind,payload)
         encoded=json.dumps(clean,ensure_ascii=False,sort_keys=True,default=str)
         digest=hashlib.sha256(encoded.encode("utf-8")).hexdigest()
         now=datetime.now(timezone.utc)
@@ -332,7 +348,7 @@ class HistoryDatabase:
             if previous and kind=="sfp":
                 try:
                     last=json.loads(previous[1])
-                    last={k:v for k,v in last.items() if k not in ("temperature_c","temp")}
+                    last=_snapshot_state(kind,last)
                     changed=last!=clean
                 except (ValueError,TypeError):
                     changed=previous[0]!=digest
