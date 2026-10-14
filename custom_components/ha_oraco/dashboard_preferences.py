@@ -29,10 +29,16 @@ class DashboardPreferences:
         if category=="infrastructure" and not re.fullmatch(r"[a-z0-9-]{1,40}",key):
             raise ValueError("Invalid manual node identifier")
         if category=="infrastructure" and value is not None:
-            if not isinstance(value,dict) or set(value)!={"name","port"}:
+            if not isinstance(value,dict) or not {"name","port"}<=set(value) or set(value)-{"name","port","macs"}:
                 raise ValueError("Invalid manual node")
             if not isinstance(value["name"],str) or not 1<=len(value["name"])<=80:
                 raise ValueError("Invalid manual node name")
+            macs=value.get("macs",[])
+            if not isinstance(macs,list) or len(macs)>50 or any(
+                not isinstance(mac,str) or not re.fullmatch(r"[0-9A-Fa-f:]{17}",mac)
+                for mac in macs
+            ):
+                raise ValueError("Invalid manually documented MAC group")
             if not isinstance(value["port"],str) or not re.fullmatch(r"\d{1,4}",value["port"]):
                 raise ValueError("Invalid manual port")
         if category=="thresholds" and key not in ("temperature_c","voltage_v","current_ma","rx_dbm","tx_dbm"):
