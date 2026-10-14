@@ -43,10 +43,11 @@ async def dashboard_data(hass, connection, msg):
 @websocket_api.websocket_command({
     vol.Required("type"): "ha_oraco/history",
     vol.Required("entry_id"): str,
-    vol.Required("mode"): vol.In(["traffic","daily","snapshots","sfp_temperature"]),
+    vol.Required("mode"): vol.In(["traffic","daily","snapshots","sfp_temperature","sfp_optical"]),
     vol.Optional("port", default="__total__"): str,
     vol.Optional("hours", default=24): vol.All(vol.Coerce(int),vol.Range(min=1,max=720)),
     vol.Optional("kind", default="sfp"): str,
+    vol.Optional("metric", default="voltage_v"): vol.In(["voltage_v","current_ma","rx_dbm","tx_dbm"]),
 })
 @websocket_api.require_admin
 @websocket_api.async_response
@@ -63,11 +64,13 @@ async def history_data(hass, connection, msg):
         result=await database.daily_totals(msg["port"])
     elif msg["mode"]=="sfp_temperature":
         result=await database.temperature_history(msg["hours"])
+    elif msg["mode"]=="sfp_optical":
+        result=await database.optical_history(msg["metric"],msg["hours"])
     else:
         result=await database.snapshot_history(msg["kind"])
     if msg["mode"]=="traffic":
         connection.send_result(msg["id"],{"items":result["series"],"total":result["total"]})
-    elif msg["mode"]=="sfp_temperature":
+    elif msg["mode"] in ("sfp_temperature","sfp_optical"):
         connection.send_result(msg["id"],result)
     else:
         connection.send_result(msg["id"],{"items":result})
