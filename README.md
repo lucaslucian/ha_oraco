@@ -15,7 +15,7 @@
 </div>
 
 > [!IMPORTANT]
-> **Versão atual: 0.4.24 · Experimental · Somente leitura.**
+> **Versão atual: 0.4.25 · Experimental · Somente leitura.**
 > A integração já está sendo utilizada com um switch real e coleta dados no Home Assistant. Isso **não equivale a homologação universal**: o firmware e o HTML CGI variam entre modelos. Consulte as [limitações](#limitações-conhecidas) antes de instalar.
 
 ## O que é o HoraInfo?
@@ -115,13 +115,14 @@ O banco fica em `<config>/.storage/ha_oraco_history.db`. É um banco **SQLite lo
 | Amostras detalhadas de tráfego | Aproximadamente 48 horas |
 | Médias e picos de tráfego em blocos de 5 minutos | 30 dias |
 | Temperatura SFP+ (média, mínima e máxima em blocos de 5 minutos) | 30 dias |
+| Tensão, corrente e potências ópticas RX/TX (média, mínima e máxima em blocos de 5 minutos) | 7 dias |
 | Volumes RX/TX consolidados por dia e por interface | 30 dias |
 | Resumos diários de verificações e snapshots de alterações | 90 dias |
 | Inventário MAC: primeira/última observação, porta, VLAN e fabricante | Histórico persistente; sem retenção temporal automática definida no código |
 
 O histórico de tráfego permite selecionar **1, 6 ou 12 horas; 1, 3, 5, 7, 15 ou 30 dias**. Volumes são derivados de **diferenças válidas dos contadores**, não da simples soma de velocidades instantâneas.
 
-Os snapshots de VLANs, transceptores e proteções são gravados quando há alteração de dados **exceto temperatura SFP+**, que é tratada como telemetria independente, enquanto os resumos diários registram a última análise e a quantidade de verificações. A consulta é apresentada por dia em **janela modal**. A temperatura SFP+ é registrada separadamente a cada coleta válida e consolidada em intervalos de cinco minutos, com gráfico e extremos. Alterações em temperatura, tensão, corrente do laser e potências RX/TX, isoladamente, não geram eventos de configuração. A série temporal específica de temperatura permanece no SQLite por 30 dias. Eventos importantes como presença/ausência do módulo, perda de sinal, mudança de identificação óptica e alterações em VLAN, isolamento ou STP continuam sendo auditados. Leituras SFP anteriores à implantação da série não são reconstruídas integralmente a partir de snapshots antigos.
+Os snapshots de VLANs, transceptores e proteções são gravados quando há alteração de dados **exceto temperatura SFP+**, que é tratada como telemetria independente, enquanto os resumos diários registram a última análise e a quantidade de verificações. A consulta é apresentada por dia em **janela modal**. A temperatura SFP+ é registrada separadamente a cada coleta válida e consolidada em intervalos de cinco minutos, com gráfico e extremos por 30 dias. Tensão, corrente do laser e potências ópticas RX/TX possuem quatro gráficos independentes com mínimo, média e máximo, períodos selecionáveis de 1 hora a 7 dias e retenção de sete dias. Alterações em temperatura, tensão, corrente do laser e potências RX/TX, isoladamente, não geram eventos de configuração. A série temporal específica de temperatura permanece no SQLite por 30 dias. Eventos importantes como presença/ausência do módulo, perda de sinal, mudança de identificação óptica e alterações em VLAN, isolamento ou STP continuam sendo auditados. Leituras SFP anteriores à implantação da série não são reconstruídas integralmente a partir de snapshots antigos.
 
 Os dados antigos armazenados antes da instalação da funcionalidade de histórico não podem ser reconstruídos retroativamente. O HoraInfo possui procedimentos de migração do histórico compatível já existente.
 
