@@ -374,13 +374,13 @@ class HaOracoPanel extends HTMLElement {
     const grid=[26,70,115,159].map(y=>'<line x1="30" x2="770" y1="'+y+'" y2="'+y+'" stroke="currentColor" opacity=".12" stroke-dasharray="4 5"/>').join("");
     return '<svg class="traffic-chart" viewBox="0 0 800 185" role="img" aria-label="Tráfego RX e TX">'
       +grid+'<text x="28" y="17" fill="currentColor" opacity=".7" font-size="12">'+rate(peak)+'</text><polygon points="'+area("rx")+'" fill="#29ade3" opacity=".08"/><polygon points="'+area("tx")+'" fill="#49bf87" opacity=".07"/><polyline points="'+points("rx")+'" fill="none" stroke="#29ade3" stroke-width="2.7" stroke-linejoin="round"/>'
-      +'<polyline points="'+points("tx")+'" fill="none" stroke="#49bf87" stroke-width="2.7" stroke-linejoin="round"/></svg>'
+      +'<polyline points="'+points("tx")+'" fill="none" stroke="#49bf87" stroke-width="2.7" stroke-linejoin="round"/>'
       +samples.filter((_,i)=>i%Math.max(1,Math.ceil(samples.length/90))===0).map(v=>{
         const i=samples.indexOf(v),x=(i*740/Math.max(1,samples.length-1)+30).toFixed(1);
         return ["rx","tx"].map(key=>'<circle cx="'+x+'" cy="'+(159-v[key]/peak*134).toFixed(1)+
           '" r="3" fill="'+(key==="rx"?"#29ade3":"#49bf87")+'"><title>'+
           this.escape(stamp(v)+" · "+key.toUpperCase()+": "+rate(v[key]))+'</title></circle>').join("");
-      }).join("")      +'<div class="chart-legend"><span>● RX — azul</span><span>● TX — verde</span><span>'
+      }).join("")+'</svg><div class="chart-legend"><span>● RX — azul</span><span>● TX — verde</span><span>'
       +samples.length+' amostras '+(persisted.length?'registradas no banco':'desta sessão')+'</span><span>'+stamp(samples[0])+' — '+stamp(samples[samples.length-1])+'</span></div>';
   }
   pref(sw,category,key,fallback="") {
@@ -414,7 +414,7 @@ class HaOracoPanel extends HTMLElement {
     if(!port)return "";
     const fmt=n=>Number(n||0).toLocaleString("pt-BR");
     const name=this.pref(sw,"ports",String(number),"Porta "+number);
-    const devices=(sw.mac?.mac_entries||[]).filter(row=>String(row.port).replace(/\\D/g,"")===String(number));
+    const devices=(sw.mac?.mac_entries||[]).filter(row=>String(row.port).replace(/\D/g,"")===String(number));
     const row=(title,value)=>'<div class="detail-item"><small>'+title+'</small><strong>'+this.escape(value)+'</strong></div>';
     return '<div class="audit-backdrop" data-modal-backdrop="true"><section class="audit-dialog" role="dialog" aria-modal="true" aria-label="Detalhes da porta">'+
       '<div class="audit-header"><div><h2>'+this.escape(name)+'</h2><p>Porta '+this.escape(number)+' · '+(port.up?"Link ativo":"Link inativo")+'</p></div>'+
