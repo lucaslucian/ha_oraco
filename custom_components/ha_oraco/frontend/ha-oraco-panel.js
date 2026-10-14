@@ -437,7 +437,6 @@ class HaOracoPanel extends HTMLElement {
   }
   topologyBoard(sw) {
     const nodes=(sw.topology?.nodes||[]).filter(n=>n.kind==="port"||n.kind==="learned_mac");
-    const manual=Object.entries(this.pref(sw,"infrastructure","",{})||{});
     const documented=Object.entries(sw.preferences?.infrastructure||{}).map(([id,value])=>({
       id:"manual:"+id,kind:"manual",label:value.name,port:String(value.port||"")
     }));
@@ -445,7 +444,7 @@ class HaOracoPanel extends HTMLElement {
     const ports=nodes.filter(n=>n.kind==="port");
     const macs=nodes.filter(n=>n.kind==="learned_mac");
     const handwritten=nodes.filter(n=>n.kind==="manual");
-    const edges=sw.topology?.edges||[];
+    const edges=[...(sw.topology?.edges||[])];
     const naturalY=(i,count)=>Math.min(94,Math.max(4,((i+1)/(count+1))*95));
     const byId=new Map();
     const pos=(n,i,count)=>{
@@ -469,7 +468,7 @@ class HaOracoPanel extends HTMLElement {
     }
     const lines=edges.filter(e=>byId.has(e.to)&&byId.has(e.from)).map(e=>{
       const a=byId.get(e.from),b=byId.get(e.to);
-      return '<line data-wire-from="'+this.escape(e.from)+'" data-wire-to="'+this.escape(e.to)+'" x1="'+((a.x+6)*10)+'" y1="'+(a.y*10)+'" x2="'+((b.x+6)*10)+'" y2="'+(b.y*10)+'" stroke="#4d8d9e" opacity=".65" stroke-width="2" '/>';
+      return '<line data-wire-from="'+this.escape(e.from)+'" data-wire-to="'+this.escape(e.to)+'" x1="'+((a.x+6)*10)+'" y1="'+(a.y*10)+'" x2="'+((b.x+6)*10)+'" y2="'+(b.y*10)+'" stroke="#4d8d9e" opacity=".65" stroke-width="2"/>';
     }).join("");
     const cards=nodes.map(n=>{
       const p=byId.get(n.id);
