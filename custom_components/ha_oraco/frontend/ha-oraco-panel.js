@@ -107,7 +107,15 @@ class HaOracoPanel extends HTMLElement {
         '<svg viewBox="0 0 380 184" role="img" aria-label="Histórico de '+title+' com média, mínima e máxima">'+
         '<polyline fill="none" stroke="#899caf" stroke-width="1.4" stroke-dasharray="4 4" points="'+poly("min")+'"/>'+
         '<polyline fill="none" stroke="#edac64" stroke-width="1.4" stroke-dasharray="4 4" points="'+poly("max")+'"/>'+
-        '<polyline fill="none" stroke="#33b3e2" stroke-width="2.4" points="'+poly("avg")+'"/></svg>'+
+        '<polyline fill="none" stroke="#33b3e2" stroke-width="2.4" points="'+poly("avg")+'"/>'+
+        samples.filter((_,i)=>i%Math.max(1,Math.ceil(samples.length/35))===0).map(row=>{
+          const i=samples.indexOf(row);
+          const stamp=new Date(row.timestamp);
+          const when=Number.isFinite(stamp.getTime())?stamp.toLocaleString("pt-BR"):"Leitura";
+          return '<circle cx="'+xx(i)+'" cy="'+yy(row.avg)+'" r="3.5" fill="#33b3e2"><title>'+
+            this.escape(when+" · Média "+format(row.avg)+" · Mín "+format(row.min)+" · Máx "+format(row.max))+
+            '</title></circle>';
+        }).join("")+'</svg>'+
         '<small>'+record.count+' leituras · blocos de 5 minutos</small></div>';
     }).join("");
     return '<section class="card"><h3>Histórico de medições ópticas</h3>'+
@@ -173,7 +181,14 @@ class HaOracoPanel extends HTMLElement {
             '<div class="temperature-chart"><svg viewBox="0 0 900 280" role="img" aria-label="Histórico da temperatura SFP com valores médios, mínimos e máximos">'+
             bands+'<polyline fill="none" stroke="#42b8ec" stroke-width="2.8" points="'+plotted+'"/>'+
             '<polyline fill="none" stroke="#86a1b7" stroke-width="1.5" stroke-dasharray="5 5" points="'+lowLine+'"/>'+
-            '<polyline fill="none" stroke="#eeac65" stroke-width="1.5" stroke-dasharray="5 5" points="'+highLine+'"/></svg></div>'+
+            '<polyline fill="none" stroke="#eeac65" stroke-width="1.5" stroke-dasharray="5 5" points="'+highLine+'"/>'+
+            items.filter((_,i)=>i%Math.max(1,Math.ceil(items.length/70))===0).map(p=>{
+              const i=items.indexOf(p),d=new Date(p.timestamp);
+              const when=Number.isFinite(d.getTime())?d.toLocaleString("pt-BR"):"Leitura";
+              return '<circle cx="'+x(i)+'" cy="'+y(p.avg)+'" r="4" fill="#42b8ec"><title>'+
+                this.escape(when+" · Média "+format(p.avg)+" · Mín "+format(p.min)+" · Máx "+format(p.max))+
+                '</title></circle>';
+            }).join("")+'</svg></div>'+
             '<div class="temp-legend"><span>Média — azul</span><span>Mínima — cinza</span><span>Máxima — laranja</span><span>'+result.count+' leituras</span></div>'+
             '<p class="footnote">Temperatura consolidada em blocos de 5 minutos. Leituras e extremos retidos por até 30 dias.</p>';
         }
