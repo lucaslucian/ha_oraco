@@ -114,6 +114,13 @@ class HistoryDatabase:
                 PRIMARY KEY(switch_id,bucket)
             )""")
             db.execute("CREATE INDEX IF NOT EXISTS idx_sfp_temperature_expiry ON sfp_temperature_5m(bucket)")
+            db.execute("""CREATE TABLE IF NOT EXISTS sfp_optical_5m (
+                switch_id TEXT NOT NULL, metric TEXT NOT NULL, bucket TEXT NOT NULL,
+                sample_count INTEGER NOT NULL, value_sum REAL NOT NULL,
+                value_min REAL NOT NULL, value_max REAL NOT NULL,
+                PRIMARY KEY(switch_id,metric,bucket)
+            )""")
+            db.execute("CREATE INDEX IF NOT EXISTS idx_sfp_optical_expiry ON sfp_optical_5m(bucket)")
             db.execute("""CREATE TABLE IF NOT EXISTS snapshot_daily (
                 switch_id TEXT, kind TEXT, day TEXT, checked_at TEXT,
                 checksum TEXT, checks INTEGER, changes INTEGER,
@@ -329,7 +336,31 @@ class HistoryDatabase:
         valid_temperature=(type(temperature) in (int,float) and math.isfinite(temperature)
                            and -40 <= temperature <= 125)
         bucket=now.replace(minute=now.minute//5*5,second=0,microsecond=0).isoformat()
+        optical_limits={
+            "voltage_v":(0.0,6.0),
+            "current_ma":(0.0,200.0),
+            "rx_dbm":(-80.0,30.0),
+            "tx_dbm":(-80.0,30.0),
+        }
+        optical_values={
+            metric:float(payload[metric]) for metric,(low,high) in optical_limits.items()
+            if kind=="sfp" and type(payload.get(metric)) in (int,float)
+            and math.isfinite(payload[metric]) and low<=payload[metric]<=high
+        }
         with self._connect() as db:
+            for metric,value in optical_values.items():
+                db.execute("""INSERT INTO sfp_optical_5m
+                    (switch_id,metric,bucket,sample_count,value_sum,value_min,value_max)
+                    VALUES (?,?,?,1,?,?,?)
+                    ON CONFLICT(switch_id,metric,bucket) DO UPDATE SET
+                        sample_count=sample_count+1,
+                        value_sum=value_sum+excluded.value_sum,
+                        value_min=MIN(value_min,excluded.value_min),
+                        value_max=MAX(value_max,excluded.value_max)""",
+                    (self.key,metric,bucket,value,value,value))
+            if kind=="sfp":
+                db.execute("DELETE FROM sfp_optical_5m WHERE bucket < ?",
+                           ((now-timedelta(days=7)).isoformat(),))
             if valid_temperature:
                 db.execute("""INSERT INTO sfp_temperature_5m
                     (switch_id,bucket,sample_count,temp_sum,temp_min,temp_max)
@@ -390,6 +421,35 @@ class HistoryDatabase:
         return {"items":items,"min":min(r[3] for r in rows),
                 "max":max(r[4] for r in rows),
                 "average":round(sum(r[2] for r in rows)/count,3),"count":count}
+
+    def _optical_history(self,metric,hours):
+        allowed=("voltage_v","current_ma","rx_dbm","tx_dbm")
+        if metric not in allowed:
+            raise ValueError("Unsupported optical metric")
+        hours=max(1,min(168,int(hours)))
+        cutoff=(datetime.now(timezone.utc)-timedelta(hours=hours)).isoformat()
+        with self._connect() as db:
+            rows=db.execute("""SELECT bucket,sample_count,value_sum,value_min,value_max
+                FROM sfp_optical_5m WHERE switch_id=? AND metric=? AND bucket>=?
+                ORDER BY bucket""",(self.key,metric,cutoff)).fetchall()
+        if not rows:
+            return {"items":[],"min":None,"max":None,"average":None,"count":0}
+        total_count=sum(r[1] for r in rows)
+        step=max(1,math.ceil(len(rows)/400))
+        items=[]
+        for idx in range(0,len(rows),step):
+            group=rows[idx:idx+step]
+            count=sum(r[1] for r in group)
+            items.append({"timestamp":group[-1][0],
+                "avg":round(sum(r[2] for r in group)/count,4),
+                "min":min(r[3] for r in group),"max":max(r[4] for r in group)})
+        return {"items":items,"min":min(r[3] for r in rows),
+                "max":max(r[4] for r in rows),
+                "average":round(sum(r[2] for r in rows)/total_count,4),
+                "count":total_count}
+
+    async def optical_history(self,metric,hours=24):
+        return await self.hass.async_add_executor_job(self._optical_history,metric,int(hours))
 
     async def temperature_history(self,hours=24):
         return await self.hass.async_add_executor_job(self._temperature_history,int(hours))
