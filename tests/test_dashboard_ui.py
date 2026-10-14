@@ -43,3 +43,9 @@ def test_chart_visuals_and_responsive_layout():
                     ".audit-dialog{width:min(1100px"):
         assert feature in js
     assert "data-wire-from" in js
+
+def test_history_websocket_sends_valid_optional_fields():
+    js=(ROOT/"frontend"/"ha-oraco-panel.js").read_text(encoding="utf-8")
+    assert 'if(mode==="sfp_optical")request.metric=kind;' in js
+    assert 'if(mode==="snapshots")request.kind=kind;' in js
+    assert 'mode,port,hours,kind,metric:kind' not in js
