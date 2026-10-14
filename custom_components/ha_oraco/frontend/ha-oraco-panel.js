@@ -468,7 +468,7 @@ class HaOracoPanel extends HTMLElement {
     }
     const lines=edges.filter(e=>byId.has(e.to)&&byId.has(e.from)).map(e=>{
       const a=byId.get(e.from),b=byId.get(e.to);
-      return '<line data-wire-from="'+this.escape(e.from)+'" data-wire-to="'+this.escape(e.to)+'" x1="'+((a.x+6)*10)+'" y1="'+(a.y*10)+'" x2="'+((b.x+6)*10)+'" y2="'+(b.y*10)+'" stroke="#4d8d9e" opacity=".65" stroke-width="2"/>';
+      return '<line data-wire-from="'+this.escape(e.from)+'" data-wire-to="'+this.escape(e.to)+'" x1="'+((a.x+6)*10)+'" y1="'+(a.y*10)+'" x2="'+((b.x+6)*10)+'" y2="'+(b.y*10)+'" stroke="#4d8d9e" opacity=".65" stroke-width="2" '+(e.relation==="manual"?'stroke-dasharray="6 5"':'')+'/>';
     }).join("");
     const cards=nodes.map(n=>{
       const p=byId.get(n.id);
