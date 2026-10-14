@@ -338,7 +338,8 @@ class HaOracoPanel extends HTMLElement {
       });
       sw.preferences ||= {};
       sw.preferences[category] ||= {};
-      sw.preferences[category][key]=value;
+      if(value===null||value==="")delete sw.preferences[category][key];
+      else sw.preferences[category][key]=value;
       this.render();
     } catch(error) {
       this.error="Não foi possível salvar preferência: "+String(error);
@@ -395,7 +396,7 @@ class HaOracoPanel extends HTMLElement {
     const height=Math.max(580,macs.length*64,ports.length*66);
     const lines=edges.filter(e=>byId.has(e.to)&&byId.has(e.from)).map(e=>{
       const a=byId.get(e.from),b=byId.get(e.to);
-      return '<line data-wire="'+this.escape(e.from)+'|'+this.escape(e.to)+'" x1="'+((a.x+6)*10)+'" y1="'+(a.y*10)+'" x2="'+((b.x+6)*10)+'" y2="'+(b.y*10)+'" stroke="#4d8d9e" opacity=".65" stroke-width="2"/>';
+      return '<line data-wire-from="'+this.escape(e.from)+'" data-wire-to="'+this.escape(e.to)+'" x1="'+((a.x+6)*10)+'" y1="'+(a.y*10)+'" x2="'+((b.x+6)*10)+'" y2="'+(b.y*10)+'" stroke="#4d8d9e" opacity=".65" stroke-width="2"/>';
     }).join("");
     const cards=nodes.map(n=>{
       const p=byId.get(n.id);
@@ -723,9 +724,9 @@ class HaOracoPanel extends HTMLElement {
           const x=Math.max(0,Math.min(88,origin.left+(e.clientX-origin.x)/rect.width*100));
           const y=Math.max(4,Math.min(96,origin.top+(e.clientY-origin.y)/rect.height*100));
           node.style.left=x+"%";node.style.top=y+"%";
-          const id=node.dataset.boardNode,lines=board.querySelectorAll("[data-wire]");
+          const id=node.dataset.boardNode,lines=board.querySelectorAll("[data-wire-from]");
           for(const line of lines){
-            const [from,to]=line.dataset.wire.split("|");
+            const from=line.dataset.wireFrom,to=line.dataset.wireTo;
             if(from===id){line.setAttribute("x1",(x+6)*10);line.setAttribute("y1",y*10);}
             if(to===id){line.setAttribute("x2",(x+6)*10);line.setAttribute("y2",y*10);}
           }
@@ -747,7 +748,7 @@ class HaOracoPanel extends HTMLElement {
       const sw=(this.data?.switches||[]).find(x=>x.id===btn.dataset.resetBoard);
       if(!sw)return;
       const layout=sw.preferences?.layout||{};
-      for(const [key] of Object.entries(layout))await this.savePreference(sw,"layout",key,{x:33,y:50});
+      for(const [key] of Object.entries(layout))await this.savePreference(sw,"layout",key,null);
     }));
     this.shadowRoot.querySelectorAll("[data-open-port]").forEach(el=>el.addEventListener("click",()=>{
       this.portModal={switchId:el.dataset.openPort,number:el.dataset.portNumber};this.render();
