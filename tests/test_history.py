@@ -333,7 +333,7 @@ def test_legacy_sfp_snapshots_with_optical_metrics_do_not_create_false_event():
                                         "temperature_c":70.0})
         days=await db.snapshot_history("sfp")
         assert len(days[0]["events"])==1
-        assert days[0]["changes"]==0
+        assert days[0]["changes"]==1  # an existing legacy event remains counted
     with TemporaryDirectory() as root:
         asyncio.run(scenario(root))
 
