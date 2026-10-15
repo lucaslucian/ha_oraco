@@ -49,3 +49,19 @@ def test_history_websocket_sends_valid_optional_fields():
     assert 'if(mode==="sfp_optical")request.metric=kind;' in js
     assert 'if(mode==="snapshots")request.kind=kind;' in js
     assert 'mode,port,hours,kind,metric:kind' not in js
+
+def test_history_errors_are_human_readable_and_retryable():
+    js=(ROOT/"frontend"/"ha-oraco-panel.js").read_text(encoding="utf-8")
+    assert "readableError(error)" in js
+    assert "error:this.readableError(error)" in js
+    assert 'data-retry-history' in js
+    assert 'metric:kind' not in js
+    assert 'Array.isArray(data)' in js
+    assert 'history-array-item' in js
+
+
+def test_signed_optical_limits_are_supported():
+    js=(ROOT/"frontend"/"ha-oraco-panel.js").read_text(encoding="utf-8")
+    assert 'parseSigned=value=>' in js
+    assert 'replace("−","-")' in js
+    assert 'Limite MÍNIMO' in js
