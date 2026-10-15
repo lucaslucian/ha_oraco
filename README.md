@@ -11,7 +11,7 @@
 
 
 > [!IMPORTANT]
-> **Versão atual: 0.4.33 · Experimental · Somente leitura.**
+> **Versão atual: 0.4.34 · Experimental · Somente leitura.**
 > A integração já está sendo utilizada com um switch real e coleta dados no Home Assistant. Isso **não equivale a homologação universal**: o firmware e o HTML CGI variam entre modelos. Consulte as [limitações](#limitações-conhecidas) antes de instalar.
 
 ## O que é o HoraInfo?
@@ -198,3 +198,8 @@ A interface mostra erros WebSocket com código e mensagem legíveis (em vez de `
 - O CI agora executa também um teste **JavaScript em tempo de execução** que abre todas as abas e modais de porta e snapshots com dados simulados, além da anterior checagem de sintaxe. Isso melhora a cobertura, mas não substitui testes de interface e sensores na instalação real do Home Assistant.
 
 **Riscos ainda acompanhados:** inventário MAC histórico no SQLite sem limite de retenção, carregamento de apenas 180 eventos de snapshot por categoria (com aviso), variações desconhecidas do HTML OEM e possíveis falhas de renderização específicas do navegador/tema do Home Assistant. Nenhum dado MAC antigo foi excluído automaticamente.
+
+
+### Limites ópticos negativos (0.4.34)
+
+O ajuste manual dos limites RX/TX aceita dois extremos negativos em **qualquer ordem**: informar `-15` e `-25` resulta automaticamente em mínimo `-25 dBm` e máximo `-15 dBm`. São aceitos pontos ou vírgulas decimais e o sinal negativo Unicode. Essa configuração é uma faixa de referência do usuário, não um limite certificado para o módulo SFP+.
