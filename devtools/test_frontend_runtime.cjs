@@ -79,8 +79,8 @@ assert.match(panel.readableError({code:"not_found",message:"History unavailable"
     assert.equal(latest.key,"rx_dbm");
     assert.ok(latest.value.low<latest.value.high);
   }
-  assert.deepEqual(saved[0].value,{low:-25,high:-15});
-  assert.deepEqual(saved[2].value,{low:-25.5,high:-15.5});
+  assert.equal(JSON.stringify(saved[0].value),JSON.stringify({low:-25,high:-15}));
+  assert.equal(JSON.stringify(saved[2].value),JSON.stringify({low:-25.5,high:-15.5}));
   context.prompt=originalPrompt;
   panel.savePreference=originalSave;
   console.log("Frontend runtime smoke tests passed");
