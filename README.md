@@ -11,7 +11,7 @@
 
 
 > [!IMPORTANT]
-> **Versão atual: 0.4.34 · Experimental · Somente leitura.**
+> **Versão atual: 0.4.35 · Experimental · Somente leitura.**
 > A integração já está sendo utilizada com um switch real e coleta dados no Home Assistant. Isso **não equivale a homologação universal**: o firmware e o HTML CGI variam entre modelos. Consulte as [limitações](#limitações-conhecidas) antes de instalar.
 
 ## O que é o HoraInfo?
@@ -203,3 +203,8 @@ A interface mostra erros WebSocket com código e mensagem legíveis (em vez de `
 ### Limites ópticos negativos (0.4.34)
 
 O ajuste manual dos limites RX/TX aceita dois extremos negativos em **qualquer ordem**: informar `-15` e `-25` resulta automaticamente em mínimo `-25 dBm` e máximo `-15 dBm`. São aceitos pontos ou vírgulas decimais e o sinal negativo Unicode. Essa configuração é uma faixa de referência do usuário, não um limite certificado para o módulo SFP+.
+
+
+### Auditoria SFP+ sem ruído óptico (0.4.35)
+
+A auditoria SFP+ passou de uma lista de campos excluídos para uma **lista explícita de dados de identificação e eventos relevantes**. Temperatura, tensão, corrente, potências RX/TX e outros campos DDMI desconhecidos do firmware nunca geram novos eventos de alteração de configuração. Os valores atuais continuam exibidos no painel e suas séries permanecem no SQLite (temperatura 30 dias; demais grandezas ópticas 7 dias). Presença, perda de sinal e troca/identificação do módulo ainda podem gerar eventos. A comparação com snapshots legados também aplica a mesma regra; os registros antigos já gravados não são apagados automaticamente para preservar dados históricos.
