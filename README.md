@@ -1,18 +1,14 @@
-<div align="center">
-
-<img src="assets/banner.svg" alt="HoraInfo — monitoramento de switches no Home Assistant" width="100%">
+![HoraInfo — monitoramento de switches no Home Assistant](custom_components/ha_oraco/brand/logo.png)
 
 # HoraInfo
 
 **Monitoramento local de switches Horaco/OEM gerenciáveis no Home Assistant**
 
-[![Testes, HACS e Hassfest](https://github.com/lucaslucian/ha_oraco/actions/workflows/offline-tests.yml/badge.svg)](https://github.com/lucaslucian/ha_oraco/actions/workflows/offline-tests.yml)
-[![Licença MIT](https://img.shields.io/github/license/lucaslucian/ha_oraco)](LICENSE)
-[![Último commit](https://img.shields.io/github/last-commit/lucaslucian/ha_oraco)](https://github.com/lucaslucian/ha_oraco/commits/main)
+[![Validação automatizada](https://github.com/lucaslucian/ha_oraco/actions/workflows/offline-tests.yml/badge.svg)](https://github.com/lucaslucian/ha_oraco/actions/workflows/offline-tests.yml)
+[Licença MIT](LICENSE) · [Histórico de alterações](https://github.com/lucaslucian/ha_oraco/commits/main)
 
-[![Adicionar ao HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=lucaslucian&repository=ha_oraco&category=integration)
+[**Adicionar o repositório ao HACS**](https://my.home-assistant.io/redirect/hacs_repository/?owner=lucaslucian&repository=ha_oraco&category=integration)
 
-</div>
 
 > [!IMPORTANT]
 > **Versão atual: 0.4.33 · Experimental · Somente leitura.**
@@ -143,7 +139,7 @@ Os indicadores ópticos podem utilizar limites personalizados por equipamento, s
 - **Topologia:** não descobre automaticamente enlaces físicos ou nomes de host por LLDP, DHCP ou mDNS. Exibe evidências provenientes da tabela MAC e permite anotações manuais claramente identificadas. As posições salvas são preferências visuais, não medições de rede.
 - **VLANs:** não garante a descoberta de todas as configurações de PVID e recursos avançados do switch.
 - **Alertas:** limites ópticos e alertas avançados ainda não estão implementados.
-- **Ícones:** apesar de haver arquivos locais de marca em `custom_components/ha_oraco/brand/`, algumas telas do HACS ou a entidade de atualização podem exibir *Icon not available*; isso depende do mecanismo de resolução de ícones dessas interfaces.
+- **Ícones:** apesar de haver arquivos locais de marca em `custom_components/ha_oraco/brand/`, o HACS e a entidade de atualização podem continuar exibindo *Icon not available* mesmo com ícones locais válidos, devido à resolução de imagens do HACS por serviço antigo. Isso não indica necessariamente um problema de cache ou ausência dos arquivos. Verifique a imagem diretamente em Configurações → Dispositivos e serviços; o comportamento do HACS depende de atualização no próprio HACS.
 - **Histórico:** em falhas de coleta ou reinicializações de contadores, pode haver intervalos não contabilizados; a integração não inventa valores para preencher essas lacunas.
 
 Para investigar leituras ausentes, utilize **HoraInfo → Sistema → Saúde das consultas**. Ali é possível distinguir falhas HTTP, erros de interpretação do HTML e problemas de gravação do histórico.
