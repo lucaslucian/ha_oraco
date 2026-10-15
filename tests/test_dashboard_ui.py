@@ -64,4 +64,6 @@ def test_signed_optical_limits_are_supported():
     js=(ROOT/"frontend"/"ha-oraco-panel.js").read_text(encoding="utf-8")
     assert 'parseSigned=value=>' in js
     assert 'replace("−","-")' in js
-    assert 'Limite MÍNIMO' in js
+    assert 'Primeiro extremo' in js
+    assert 'Math.min(a,b)' in js
+    assert 'Math.max(a,b)' in js
