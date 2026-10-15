@@ -472,3 +472,55 @@ def test_too_large_unsigned_counter_is_never_written_into_sqlite():
         assert (await db.storage_summary())["rows"]["traffic_baselines"]==1
     with TemporaryDirectory() as root:
         asyncio.run(scenario(root))
+
+def test_unknown_volatile_sfp_fields_never_trigger_audit_changes():
+    async def scenario(root):
+        db=load().HistoryDatabase(FakeHass(root),"sfp_unknown_telemetry")
+        await db.initialize()
+        first={"vendor":"ODI","part_number":"DFP-34X-2IY3",
+               "module_present":"Yes","loss_of_signal":"No",
+               "temperature_c":65,"voltage_v":3.1,"current_ma":0,
+               "rx_dbm":-40,"tx_dbm":-15,
+               "laser_bias_raw":"11-42","laser_tx_power":134,
+               "diagnostic_status":"t=65.1 rx=-40"}
+        await db.record_snapshot("sfp",first)
+        second={**first,"temperature_c":74,"voltage_v":3.4,"current_ma":17,
+                "rx_dbm":-20,"tx_dbm":-12,"laser_bias_raw":"18-99",
+                "laser_tx_power":200,"diagnostic_status":"t=74 rx=-20",
+                "unrecognized_ddmi_voltage_raw":"123-21"}
+        await db.record_snapshot("sfp",second)
+        days=await db.snapshot_history("sfp")
+        assert days[0]["checks"]==2
+        assert days[0]["changes"]==1
+        assert len(days[0]["events"])==1
+        assert set(days[0]["events"][0]["data"])=={
+            "vendor","part_number","module_present","loss_of_signal"}
+        await db.record_snapshot("sfp",{**second,"loss_of_signal":"Yes"})
+        assert (await db.snapshot_history("sfp"))[0]["changes"]==2
+        assert (await db.temperature_history(24))["count"]==3
+        assert (await db.optical_history("voltage_v",24))["count"]==3
+    with TemporaryDirectory() as root:
+        asyncio.run(scenario(root))
+
+
+def test_legacy_unknown_sfp_telemetry_never_triggers_new_snapshot():
+    async def scenario(root):
+        db=load().HistoryDatabase(FakeHass(root),"legacy_unknown_sfp")
+        await db.initialize()
+        from sqlite3 import connect
+        from datetime import datetime,timezone
+        import json,hashlib
+        old={"vendor":"ODI","module_present":"Yes",
+             "optical_monitor_counter":100,"temperature_c":60,
+             "voltage_v":3.2}
+        encoded=json.dumps(old,sort_keys=True)
+        with connect(db.path) as conn:
+            conn.execute("INSERT INTO snapshots VALUES(?,?,?,?,?)",
+                ("legacy_unknown_sfp","sfp",datetime.now(timezone.utc).isoformat(),
+                 hashlib.sha256(encoded.encode()).hexdigest(),encoded))
+        await db.record_snapshot("sfp",{
+            **old,"optical_monitor_counter":200,"temperature_c":71,"voltage_v":3.4})
+        events=(await db.snapshot_history("sfp"))[0]["events"]
+        assert len(events)==1  # old record retained, no new artificial event
+    with TemporaryDirectory() as root:
+        asyncio.run(scenario(root))
