@@ -15,20 +15,29 @@ from zoneinfo import ZoneInfo
 from .traffic_guard import counter_delta, valid_counter
 
 
-# Continuous optical measurements belong to telemetry, not change auditing.
-# Retain module identity, presence and loss-of-signal transitions as events.
-SFP_TELEMETRY_FIELDS = frozenset((
-    "temperature_c", "temp", "voltage_v", "voltage", "current_ma", "current",
-    "rx_dbm", "tx_dbm", "rxpower", "txpower", "rx_power", "tx_power",
-    "input_power_dbm", "output_power_dbm",
+# Only stable identity and meaningful module state belong in the audit.
+# Firmware may expose additional DDMI fields, so prefer an allowlist.
+SFP_AUDIT_FIELDS = frozenset((
+    "module_present", "loss_of_signal", "port", "transceiver",
+    "connector", "compliance", "media", "vendor_oui", "vendor",
+    "part_number", "revision", "serial_number", "manufacture_date",
+    "wavelength_nm", "bitrate",
 ))
-
 
 def _snapshot_state(kind, payload):
     if kind != "sfp":
         return payload
-    return {key: value for key, value in payload.items()
-            if key not in SFP_TELEMETRY_FIELDS}
+    if not isinstance(payload, dict):
+        return {}
+    state = {}
+    for key in SFP_AUDIT_FIELDS:
+        value = payload.get(key)
+        if value is None or value == "":
+            continue
+        if isinstance(value, str):
+            value = " ".join(value.split())
+        state[key] = value
+    return state
 
 
 class HistoryDatabase:
