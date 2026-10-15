@@ -275,7 +275,7 @@ class HaOracoPanel extends HTMLElement {
       if(mode==="snapshots")request.kind=kind;
       if(mode==="sfp_optical")request.metric=kind;
       const result=await this._hass.connection.sendMessagePromise(request);
-      this.historyViews[key]={...result,items:result.items||[],loading:false};
+      this.historyViews[key]={...result,items:Array.isArray(result?.items)?result.items:[],loading:false};
     } catch(error) {
       this.historyViews[key]={loading:false,error:this.readableError(error),items:[]};
     }
@@ -327,13 +327,14 @@ class HaOracoPanel extends HTMLElement {
   dailyTable(switchId,port="__total__") {
     const hours=this.chartHours[switchId+"|"+port]||this.defaultRange((this.data?.switches||[]).find(sw=>sw.id===switchId)||{preferences:{}});
     const current=this.historyViews[switchId+"|traffic|"+port+"|"+hours+"|sfp"];
-    const totals=current?.total;
+    const totals=current?.total && typeof current.total==="object" ? current.total : null;
+    const status=current?.loading?"Consultando histórico…":current?.error?"Consulta indisponível":current?"Sem totais registrados":"Consultando histórico…";
     const key=switchId+"|daily|"+port+"|24|sfp";
     const result=this.historyViews[key];
     const box='<div class="volume-strip"><div><small>Recebido no período selecionado</small><strong>'+
-      (totals?this.prettyBytes(totals.rx_bytes):"Aguardando consulta")+'</strong></div>'+
+      (totals?this.prettyBytes(totals.rx_bytes):status)+'</strong></div>'+
       '<div><small>Enviado no período selecionado</small><strong>'+
-      (totals?this.prettyBytes(totals.tx_bytes):"Aguardando consulta")+'</strong></div></div>';
+      (totals?this.prettyBytes(totals.tx_bytes):status)+'</strong></div></div>';
     if(!result)return box+'<p class="muted">Preparando gráfico de volume diário...</p>';
     if(result.loading)return box+'<p class="muted">Consultando totais diários…</p>';
     if(result.error)return box+'<p class="muted">'+this.escape(result.error)+'</p>';
@@ -359,7 +360,7 @@ class HaOracoPanel extends HTMLElement {
     const changes=keys.filter(key=>JSON.stringify(before[key])!==JSON.stringify(after[key]));
     if(!changes.length)return '<p class="muted">Sem diferenças nos campos monitorados.</p>';
     return '<div class="snapshot-diff"><div class="diff-header"><span>Campo</span><span>Antes</span><span>Depois</span></div>'+
-      changes.map(key=>'<div class="diff-row"><span>'+this.escape(key)+'</span><del>'+this.escape(before[key]??"—")+'</del><ins>'+this.escape(after[key]??"—")+'</ins></div>').join("")+
+      changes.map(key=>'<div class="diff-row"><span>'+this.escape(key)+'</span><del>'+this.snapshotDetails(before[key]??"—")+'</del><ins>'+this.snapshotDetails(after[key]??"—")+'</ins></div>').join("")+
       '</div>';
   }
   snapshotDetails(data,level=0) {
@@ -603,7 +604,9 @@ class HaOracoPanel extends HTMLElement {
     return '<div class="topology-scroll"><svg class="topology-svg" role="img" aria-label="Conexões lógicas individuais dos MACs por porta" viewBox="0 0 '+width+' '+totalHeight+'">'+parts.join('')+'</svg></div><p class="topology-disclaimer">Cada MAC aprendido é representado individualmente. A tabela MAC indica aprendizado lógico, não ligação física direta.</p>';
   }
   escape(v) {
-    return String(v ?? "—").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+    const display = v === null || v === undefined ? "—" :
+      typeof v === "object" ? JSON.stringify(v, null, 2) : String(v);
+    return display.replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
   }
   render() {
     if (!this.shadowRoot) return;
