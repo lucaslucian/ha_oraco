@@ -145,6 +145,10 @@ class HoracoCoordinator(DataUpdateCoordinator[dict]):
                     except Exception as err:
                         _LOGGER.debug("%s unavailable on %s: %s", name, self.client.host, err)
                         self.diagnostics["endpoints"][name] = {"status": "unavailable", "error": type(err).__name__, "detail": str(err)[:180]}
+                        if name == "sfp":
+                            # Never expose stale optical values as current after a failed
+                            # collection; the historical measurements remain in SQLite.
+                            self.cache["sfp"].pop("sfp", None)
                         self.last[name] = now
             if self.inventory is not None and ("mac" not in self.last or now - self.last["mac"] >= 120):
                 try:
