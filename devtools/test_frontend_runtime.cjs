@@ -65,5 +65,23 @@ assert.match(panel.readableError({code:"not_found",message:"History unavailable"
   }}};
   await panel.fetchHistory(sw.id,"traffic");
   assert.equal(panel.historyViews[sw.id+"|traffic|__total__|24|sfp"].items.length,1);
+  // Signed optical power limits must work in either order.
+  const originalPrompt=context.prompt;
+  const originalSave=panel.savePreference.bind(panel);
+  const saved=[];
+  panel.savePreference=async (_sw,category,key,value)=>saved.push({category,key,value});
+  for(const values of [["-15","-25"],["-25","-15"],["−15,5","−25,5"]]){
+    let index=0;
+    context.prompt=()=>values[index++];
+    await panel.setOpticalLimits(sw,"rx_dbm");
+    const latest=saved.at(-1);
+    assert.equal(latest.category,"thresholds");
+    assert.equal(latest.key,"rx_dbm");
+    assert.ok(latest.value.low<latest.value.high);
+  }
+  assert.deepEqual(saved[0].value,{low:-25,high:-15});
+  assert.deepEqual(saved[2].value,{low:-25.5,high:-15.5});
+  context.prompt=originalPrompt;
+  panel.savePreference=originalSave;
   console.log("Frontend runtime smoke tests passed");
 })().catch(err=>{console.error(err);process.exitCode=1;});
