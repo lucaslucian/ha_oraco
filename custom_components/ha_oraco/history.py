@@ -177,7 +177,7 @@ class HistoryDatabase:
             counters = (port.get("rx_bytes"), port.get("tx_bytes"))
             previous = self.previous_counters.get(number)
             previous_stamp = self.previous_stamps.get(number)
-            if all(valid_counter(value) for value in counters):
+            if all(valid_counter(value) and value <= 2**63 - 1 for value in counters):
                 deltas = []
                 for index in range(2):
                     old = previous[index] if previous else None
