@@ -454,3 +454,21 @@ def test_snapshot_history_indicates_truncated_event_list():
         assert entries[0]["changes"]==190
     with TemporaryDirectory() as root:
         asyncio.run(scenario(root))
+
+def test_too_large_unsigned_counter_is_never_written_into_sqlite():
+    async def scenario(root):
+        db=load().HistoryDatabase(FakeHass(root),"max_counter")
+        await db.initialize()
+        # The source firmware combines 32-bit halves into an unsigned 64-bit
+        # counter. SQLite INTEGER only accepts *signed* 64-bit values.
+        extreme=2**63+17
+        await db.record_traffic({"2":{"rx_bps":12,"tx_bps":14,
+                                      "rx_bytes":extreme,"tx_bytes":extreme}})
+        data=await db.storage_summary()
+        assert data["rows"]["traffic"]==2
+        assert data["rows"]["traffic_baselines"]==0
+        await db.record_traffic({"2":{"rx_bps":12,"tx_bps":14,
+                                      "rx_bytes":100,"tx_bytes":200}})
+        assert (await db.storage_summary())["rows"]["traffic_baselines"]==1
+    with TemporaryDirectory() as root:
+        asyncio.run(scenario(root))
