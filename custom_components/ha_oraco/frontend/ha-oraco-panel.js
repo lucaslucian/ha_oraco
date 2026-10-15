@@ -41,7 +41,7 @@ class HaOracoPanel extends HTMLElement {
         if(this.samples[sw.id].length>120) this.samples[sw.id].shift();
       }
       this.error = null;
-    } catch (err) { this.error = String(err); }
+    } catch (err) { this.error = this.readableError(err); }
     finally { this.busy = false; this.render(); this.loadCurrentCharts(true); this.loadSfpTemperature(); this.loadSfpOptics(); this.loadStorageStats(); }
   }
 
@@ -254,6 +254,16 @@ class HaOracoPanel extends HTMLElement {
       +'</div><div class="face-legend"><span>● Verde: conectada</span><span>● Cinza: desconectada</span>'
       +'<span>Representação lógica; disposição física depende do modelo</span></div></div>';
   }
+  readableError(error) {
+    if(typeof error==="string")return error;
+    if(error instanceof Error)return error.message||error.name;
+    if(error&&typeof error==="object"){
+      const code=error.code||error.error?.code||"";
+      const detail=error.message||error.error?.message||error.detail||error.error?.detail||"";
+      return [code,detail].filter(Boolean).join(" · ")||JSON.stringify(error);
+    }
+    return String(error??"Erro desconhecido");
+  }
   async fetchHistory(switchId,mode,port="__total__",hours=24,kind="sfp") {
     const key=switchId+"|"+mode+"|"+port+"|"+hours+"|"+kind;
     this.historyViews[key]={loading:true};
@@ -265,7 +275,7 @@ class HaOracoPanel extends HTMLElement {
       const result=await this._hass.connection.sendMessagePromise(request);
       this.historyViews[key]={...result,items:result.items||[],loading:false};
     } catch(error) {
-      this.historyViews[key]={loading:false,error:String(error),items:[]};
+      this.historyViews[key]={loading:false,error:this.readableError(error),items:[]};
     }
     this.render();
   }
@@ -313,7 +323,7 @@ class HaOracoPanel extends HTMLElement {
       n>=1e3?(n/1e3).toLocaleString("pt-BR",{maximumFractionDigits:1})+" KB":n+" B";
   }
   dailyTable(switchId,port="__total__") {
-    const hours=this.chartHours[switchId+"|"+port]||24;
+    const hours=this.chartHours[switchId+"|"+port]||this.defaultRange((this.data?.switches||[]).find(sw=>sw.id===switchId)||{preferences:{}});
     const current=this.historyViews[switchId+"|traffic|"+port+"|"+hours+"|sfp"];
     const totals=current?.total;
     const key=switchId+"|daily|"+port+"|24|sfp";
@@ -410,7 +420,9 @@ class HaOracoPanel extends HTMLElement {
     const query=this.historyViews[key];
     const persisted=(query?.items||(port ? (sw?.traffic_by_port?.[port]||[]) : (sw?.traffic_history||[]))).map(v=>({rx:Math.max(0,Number(v.rx)||0),tx:Math.max(0,Number(v.tx)||0),timestamp:v.timestamp}));
     const samples=persisted.length?persisted:(port?[]:(this.samples[id]||[]));
-    if(samples.length<2)return '<p class="empty">Aguardando duas amostras. Os dados são armazenados continuamente.</p>';
+    if(query?.error)return '<div class="history-error"><strong>Falha ao consultar histórico</strong><p>'+this.escape(query.error)+'</p><button class="history-action" data-retry-history="'+this.escape(id)+'" data-retry-port="'+this.escape(port||"__total__")+'" data-retry-hours="'+hours+'">Tentar novamente</button></div>';
+    if(query?.loading)return '<p class="muted">Buscando amostras no banco SQLite…</p>';
+    if(samples.length<2)return '<p class="empty">Nenhum histórico retornado para este intervalo. Verifique a coleta e o armazenamento na aba Sistema.</p>';
     const peak=Math.max(1,...samples.flatMap(v=>[v.rx,v.tx]));
     const rate=n=>n>=1e9?(n/1e9).toFixed(2)+" Gb/s":n>=1e6?(n/1e6).toFixed(1)+" Mb/s":n>=1e3?(n/1e3).toFixed(1)+" kb/s":n.toFixed(0)+" b/s";
     const stamp=entry=>{const date=new Date(entry?.timestamp);return Number.isFinite(date.getTime())?date.toLocaleString("pt-BR"):"—";};
@@ -451,7 +463,7 @@ class HaOracoPanel extends HTMLElement {
       else sw.preferences[category][key]=value;
       this.render();
     } catch(error) {
-      this.error="Não foi possível salvar preferência: "+String(error);
+      this.error="Não foi possível salvar preferência: "+this.readableError(error);
       this.render();
     }
   }
@@ -785,6 +797,7 @@ class HaOracoPanel extends HTMLElement {
       th{position:sticky;top:0;background:var(--card-background-color);z-index:1;font-size:11px;letter-spacing:.025em;text-transform:uppercase}
       tbody tr:nth-child(even){background:color-mix(in srgb,var(--secondary-background-color) 42%,transparent)}
       td{vertical-align:middle}
+      .history-error{padding:13px 16px;border:1px solid var(--error-color,#c75e5e);border-radius:10px;margin:12px 0}.history-error p{overflow-wrap:anywhere}
       .history-controls{border-radius:12px;padding:12px;background:var(--secondary-background-color)}
       .history-select,.inventory-filters select{outline-offset:2px}
       .history-select:focus-visible,.inventory-filters select:focus-visible{outline:2px solid var(--primary-color)}
@@ -1056,6 +1069,7 @@ class HaOracoPanel extends HTMLElement {
       const sw=(this.data?.switches||[])[0];
       if(sw)this.savePreference(sw,"options","compact",!this.pref(sw,"options","compact",false));
     }));
+    this.shadowRoot.querySelectorAll("[data-retry-history]").forEach(btn=>btn.addEventListener("click",()=>this.fetchHistory(btn.dataset.retryHistory,"traffic",btn.dataset.retryPort,Number(btn.dataset.retryHours))));
     this.shadowRoot.querySelectorAll("[data-refresh-storage]").forEach(btn=>btn.addEventListener("click",()=>this.fetchHistory(btn.dataset.refreshStorage,"storage")));
     this.shadowRoot.getElementById("refresh")?.addEventListener("click",()=>this.refresh());
     this.shadowRoot.getElementById("mac-filter")?.addEventListener("change",ev=>{this.macFilter=ev.target.value;this.render()});
