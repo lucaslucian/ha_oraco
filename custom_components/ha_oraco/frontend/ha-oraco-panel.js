@@ -201,12 +201,14 @@ class HaOracoPanel extends HTMLElement {
   }
   async setOpticalLimits(sw,metric) {
     const existing=this.pref(sw,"thresholds",metric,null);
-    const low=prompt("Limite mínimo personalizado para "+this.sfpLabel(metric)+". Vazio remove os limites:",existing?.low??"");
+    const low=prompt("Limite MÍNIMO de "+this.sfpLabel(metric)+" (aceita números negativos, exemplo: -40). Deixe vazio para remover:",existing?.low??"");
     if(low===null)return;
     if(low.trim()===""){await this.savePreference(sw,"thresholds",metric,null);return;}
-    const high=prompt("Limite máximo personalizado para "+this.sfpLabel(metric)+":",existing?.high??"");
+    const high=prompt("Limite MÁXIMO de "+this.sfpLabel(metric)+" (aceita negativos, exemplo: -10):",existing?.high??"");
     if(high===null)return;
-    const a=Number(low.replace(",",".")),b=Number(high.replace(",","."));
+    const parseSigned=value=>Number(String(value).trim().replace("−","-").replace(",","."));
+    if(!low.trim()||!high.trim()){this.error="Preencha os dois limites ou remova a configuração.";this.render();return;}
+    const a=parseSigned(low),b=parseSigned(high);
     if(!Number.isFinite(a)||!Number.isFinite(b)||a>=b||Math.abs(a)>1000||Math.abs(b)>1000){
       this.error="Limites inválidos: informe números finitos, com mínimo menor que máximo.";this.render();return;
     }
@@ -362,7 +364,7 @@ class HaOracoPanel extends HTMLElement {
   }
   snapshotDetails(data,level=0) {
     if(data===null||data===undefined)return "—";
-    if(Array.isArray(data))return this.escape(data.join(", "));
+    if(Array.isArray(data))return data.every(v=>v===null||typeof v!=="object")?this.escape(data.join(", ")):'<div class="history-array">'+data.map((value,index)=>'<div class="history-array-item"><small>Item '+(index+1)+'</small>'+this.snapshotDetails(value,level+1)+'</div>').join("")+'</div>';
     if(typeof data!=="object")return this.escape(data);
     if(level>3)return '<span class="muted">Detalhes adicionais</span>';
     return '<div class="history-fields">'+Object.entries(data).map(([key,value])=>
@@ -797,6 +799,9 @@ class HaOracoPanel extends HTMLElement {
       th{position:sticky;top:0;background:var(--card-background-color);z-index:1;font-size:11px;letter-spacing:.025em;text-transform:uppercase}
       tbody tr:nth-child(even){background:color-mix(in srgb,var(--secondary-background-color) 42%,transparent)}
       td{vertical-align:middle}
+      .history-array{display:grid;gap:8px;min-width:0}.history-array-item{padding:9px;border:1px solid var(--divider-color);border-radius:8px;min-width:0}.history-array-item>small{display:block;margin-bottom:6px}
+      .optical-item .threshold-edit{display:block;margin-top:10px;padding:7px 9px;border:1px solid var(--divider-color);border-radius:7px;white-space:normal;text-align:left}
+      .optical-item strong{display:block;line-height:1.45}
       .history-error{padding:13px 16px;border:1px solid var(--error-color,#c75e5e);border-radius:10px;margin:12px 0}.history-error p{overflow-wrap:anywhere}
       .history-controls{border-radius:12px;padding:12px;background:var(--secondary-background-color)}
       .history-select,.inventory-filters select{outline-offset:2px}
