@@ -15,7 +15,7 @@
 </div>
 
 > [!IMPORTANT]
-> **Versão atual: 0.4.31 · Experimental · Somente leitura.**
+> **Versão atual: 0.4.32 · Experimental · Somente leitura.**
 > A integração já está sendo utilizada com um switch real e coleta dados no Home Assistant. Isso **não equivale a homologação universal**: o firmware e o HTML CGI variam entre modelos. Consulte as [limitações](#limitações-conhecidas) antes de instalar.
 
 ## O que é o HoraInfo?
@@ -187,3 +187,8 @@ Distribuído sob a [licença MIT](LICENSE).
 Inspirado em [switch-dashboard](https://github.com/byte4geek/switch-dashboard) e [horaco_switch_ha](https://github.com/gtrancillo/horaco_switch_ha).
 
 <sub>Partes do desenvolvimento e da documentação tiveram assistência de inteligência artificial. As funcionalidades e os limites de compatibilidade devem ser verificados em cada ambiente.</sub>
+
+
+### Histórico, diagnóstico de erros e OUI (0.4.32)
+
+A interface mostra erros WebSocket com código e mensagem legíveis (em vez de `[object Object]`) e permite tentar novamente a consulta de tráfego. O painel de snapshots exibe listas aninhadas como itens, sem converter objetos para texto bruto. A entrada de limites ópticos aceita números negativos (por exemplo, -40 e -10 dBm) e deixa os botões de configuração separados dos valores. As informações de OUI distinguem o **último download bem-sucedido** da **última tentativa** (mesmo quando todas as fontes falharam), com datas e estado das fontes persistidos no Home Assistant após reinicializações. Se o gráfico histórico continuar sem dados, consulte a mensagem de erro detalhada e a seção Sistema → Armazenamento SQLite antes de presumir que a coleta foi perdida.
