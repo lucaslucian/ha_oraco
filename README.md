@@ -15,7 +15,7 @@
 </div>
 
 > [!IMPORTANT]
-> **Versão atual: 0.4.32 · Experimental · Somente leitura.**
+> **Versão atual: 0.4.33 · Experimental · Somente leitura.**
 > A integração já está sendo utilizada com um switch real e coleta dados no Home Assistant. Isso **não equivale a homologação universal**: o firmware e o HTML CGI variam entre modelos. Consulte as [limitações](#limitações-conhecidas) antes de instalar.
 
 ## O que é o HoraInfo?
@@ -192,3 +192,13 @@ Inspirado em [switch-dashboard](https://github.com/byte4geek/switch-dashboard) e
 ### Histórico, diagnóstico de erros e OUI (0.4.32)
 
 A interface mostra erros WebSocket com código e mensagem legíveis (em vez de `[object Object]`) e permite tentar novamente a consulta de tráfego. O painel de snapshots exibe listas aninhadas como itens, sem converter objetos para texto bruto. A entrada de limites ópticos aceita números negativos (por exemplo, -40 e -10 dBm) e deixa os botões de configuração separados dos valores. As informações de OUI distinguem o **último download bem-sucedido** da **última tentativa** (mesmo quando todas as fontes falharam), com datas e estado das fontes persistidos no Home Assistant após reinicializações. Se o gráfico histórico continuar sem dados, consulte a mensagem de erro detalhada e a seção Sistema → Armazenamento SQLite antes de presumir que a coleta foi perdida.
+
+
+### Auditoria de regressão (0.4.33)
+
+- Corrigida a persistência de contadores não representáveis pelo inteiro **assinado** de 64 bits do SQLite; valores acima desse limite deixam de ser gravados como baseline, evitando exceções e preservando as amostras de velocidade válidas.
+- Quando a coleta do endpoint SFP+ falha, as medições ópticas deixam de ser expostas como *atuais*; os registros históricos persistidos não são apagados.
+- Ampliados os testes para tentativas OUI malsucedidas, preservação do cache existente, restauração de data e status após reinicialização e limite do contador SQLite.
+- O CI agora executa também um teste **JavaScript em tempo de execução** que abre todas as abas e modais de porta e snapshots com dados simulados, além da anterior checagem de sintaxe. Isso melhora a cobertura, mas não substitui testes de interface e sensores na instalação real do Home Assistant.
+
+**Riscos ainda acompanhados:** inventário MAC histórico no SQLite sem limite de retenção, carregamento de apenas 180 eventos de snapshot por categoria (com aviso), variações desconhecidas do HTML OEM e possíveis falhas de renderização específicas do navegador/tema do Home Assistant. Nenhum dado MAC antigo foi excluído automaticamente.
