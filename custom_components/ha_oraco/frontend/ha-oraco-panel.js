@@ -201,18 +201,18 @@ class HaOracoPanel extends HTMLElement {
   }
   async setOpticalLimits(sw,metric) {
     const existing=this.pref(sw,"thresholds",metric,null);
-    const low=prompt("Limite MÍNIMO de "+this.sfpLabel(metric)+" (aceita números negativos, exemplo: -40). Deixe vazio para remover:",existing?.low??"");
+    const low=prompt("Primeiro extremo (ex.: -25) de "+this.sfpLabel(metric)+" (aceita números negativos, exemplo: -40). Deixe vazio para remover:",existing?.low??"");
     if(low===null)return;
     if(low.trim()===""){await this.savePreference(sw,"thresholds",metric,null);return;}
-    const high=prompt("Limite MÁXIMO de "+this.sfpLabel(metric)+" (aceita negativos, exemplo: -10):",existing?.high??"");
+    const high=prompt("Segundo extremo (ex.: -15) de "+this.sfpLabel(metric)+" (aceita negativos, exemplo: -10):",existing?.high??"");
     if(high===null)return;
     const parseSigned=value=>Number(String(value).trim().replace("−","-").replace(",","."));
     if(!low.trim()||!high.trim()){this.error="Preencha os dois limites ou remova a configuração.";this.render();return;}
     const a=parseSigned(low),b=parseSigned(high);
-    if(!Number.isFinite(a)||!Number.isFinite(b)||a>=b||Math.abs(a)>1000||Math.abs(b)>1000){
-      this.error="Limites inválidos: informe números finitos, com mínimo menor que máximo.";this.render();return;
+    if(!Number.isFinite(a)||!Number.isFinite(b)||a===b||Math.abs(a)>1000||Math.abs(b)>1000){
+      this.error="Limites inválidos: informe dois números diferentes entre -1000 e 1000.";this.render();return;
     }
-    await this.savePreference(sw,"thresholds",metric,{low:a,high:b});
+    await this.savePreference(sw,"thresholds",metric,{low:Math.min(a,b),high:Math.max(a,b)});
   }
   renderSfp(sw,compact=false) {
     const raw=sw.sfp?.sfp||{};
