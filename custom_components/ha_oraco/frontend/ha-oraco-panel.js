@@ -257,14 +257,20 @@ class HaOracoPanel extends HTMLElement {
       +'<span>Representação lógica; disposição física depende do modelo</span></div></div>';
   }
   readableError(error) {
-    if(typeof error==="string")return error;
-    if(error instanceof Error)return error.message||error.name;
-    if(error&&typeof error==="object"){
-      const code=error.code||error.error?.code||"";
-      const detail=error.message||error.error?.message||error.detail||error.error?.detail||"";
-      return [code,detail].filter(Boolean).join(" · ")||JSON.stringify(error);
-    }
-    return String(error??"Erro desconhecido");
+    const describe=(value,depth=0)=>{
+      if(value===null||value===undefined)return "";
+      if(typeof value==="string")return value==="[object Object]"?"Resposta de erro não estruturada":value;
+      if(typeof value!=="object")return String(value);
+      if(depth>4)return "Erro com detalhes aninhados";
+      const message=value.message??value.detail??value.description??value.error??value.code;
+      if(message!==undefined&&message!==value){
+        const description=describe(message,depth+1);
+        const code=value.code&&value.code!==message?describe(value.code,depth+1):"";
+        return [code,description].filter(Boolean).join(" · ");
+      }
+      try {return JSON.stringify(value);}catch(_){return "Erro não serializável";}
+    };
+    return describe(error)||"Erro desconhecido";
   }
   async fetchHistory(switchId,mode,port="__total__",hours=24,kind="sfp") {
     const key=switchId+"|"+mode+"|"+port+"|"+hours+"|"+kind;
@@ -275,6 +281,7 @@ class HaOracoPanel extends HTMLElement {
       if(mode==="snapshots")request.kind=kind;
       if(mode==="sfp_optical")request.metric=kind;
       const result=await this._hass.connection.sendMessagePromise(request);
+      if(result?.error)throw result.error;
       this.historyViews[key]={...result,items:Array.isArray(result?.items)?result.items:[],loading:false};
     } catch(error) {
       this.historyViews[key]={loading:false,error:this.readableError(error),items:[]};
@@ -382,7 +389,7 @@ class HaOracoPanel extends HTMLElement {
     const result=this.historyViews[key];
     let body='<p class="muted">Carregando verificações…</p>';
     if(result && !result.loading){
-      if(result.error)body='<p class="muted">'+this.escape(result.error)+'</p>';
+      if(result.error)body='<div class="history-error"><strong>Falha ao carregar histórico</strong><p>'+this.escape(this.readableError(result.error))+'</p><button class="history-action" data-retry-snapshot="true">Tentar novamente</button></div>';
       else {
         const days=(result.items||[]).map(item=>item.day?item:{
           day:String(item.timestamp||'').slice(0,10),
@@ -1048,6 +1055,9 @@ class HaOracoPanel extends HTMLElement {
       this.snapshotModal={switchId:btn.dataset.snapshotSwitch,kind:btn.dataset.snapshotKind,label:btn.dataset.snapshotLabel};
       this.snapshotDay=null;
       this.fetchHistory(btn.dataset.snapshotSwitch,"snapshots","__total__",24,btn.dataset.snapshotKind);
+    }));
+    this.shadowRoot.querySelectorAll("[data-retry-snapshot]").forEach(btn=>btn.addEventListener("click",()=>{
+      if(this.snapshotModal)this.fetchHistory(this.snapshotModal.switchId,"snapshots","__total__",24,this.snapshotModal.kind);
     }));
     this.shadowRoot.querySelectorAll("[data-close-audit]").forEach(btn=>btn.addEventListener("click",()=>{
       this.snapshotModal=null;this.render();

@@ -67,3 +67,17 @@ def test_signed_optical_limits_are_supported():
     assert 'Primeiro extremo' in js
     assert 'Math.min(a,b)' in js
     assert 'Math.max(a,b)' in js
+
+
+def test_snapshot_history_errors_are_structured_and_retryable():
+    js=(ROOT/"frontend"/"ha-oraco-panel.js").read_text(encoding="utf-8")
+    assert 'this.escape(this.readableError(result.error))' in js
+    assert 'data-retry-snapshot="true"' in js
+    assert 'this.snapshotModal.kind' in js
+    assert 'if(result?.error)throw result.error;' in js
+    assert 'JSON.stringify(value)' in js
+    assert 'value==="[object Object]"' in js
+    panel=(ROOT/"panel.py").read_text(encoding="utf-8")
+    manifest=(ROOT/"manifest.json").read_text(encoding="utf-8")
+    assert '?v=0.4.37' in panel
+    assert '"version": "0.4.37"' in manifest
