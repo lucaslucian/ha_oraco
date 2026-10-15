@@ -28,6 +28,8 @@ class VendorCache:
         data = await self.store.async_load() or {}
         self.prefixes = data.get("prefixes", {})
         self.last_updated = data.get("last_updated")
+        self.last_attempt = data.get("last_attempt")
+        self.source_status = data.get("sources", {})
 
     def lookup(self, mac):
         kind = mac_classification(mac)
@@ -91,5 +93,6 @@ class VendorCache:
             complete = len(self.source_status) == len(SOURCES) and all(x["status"] == "ok" for x in self.source_status.values())
             if complete:
                 self.last_updated = datetime.now(timezone.utc).isoformat()
-            await self.store.async_save({"prefixes": found, "last_updated": self.last_updated})
+        await self.store.async_save({"prefixes": self.prefixes, "last_updated": self.last_updated,
+                                     "last_attempt": self.last_attempt, "sources": self.source_status})
         return len(found)
