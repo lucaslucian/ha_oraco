@@ -82,7 +82,6 @@ class VendorCache:
                     raise ValueError("OUI fallback dataset unexpectedly small")
                 found = fallback
                 self.source_status["github_oui_mirror"] = {"status":"ok","count":len(found)}
-                self.last_updated = datetime.now(timezone.utc).isoformat()
             except Exception as err:
                 self.source_status["github_oui_mirror"] = {"status":"failed","error":type(err).__name__}
                 _LOGGER.warning("HoraInfo fallback OUI mirror unavailable: %s", type(err).__name__)
@@ -90,9 +89,9 @@ class VendorCache:
             if any(x['status'] != 'ok' for x in self.source_status.values()):
                 found = {**self.prefixes, **found}
             self.prefixes = found
-            complete = len(self.source_status) == len(SOURCES) and all(x["status"] == "ok" for x in self.source_status.values())
-            if complete:
-                self.last_updated = datetime.now(timezone.utc).isoformat()
+            # Any successfully parsed dataset, including a partial IEEE feed
+            # or fallback mirror, is a successful data update.
+            self.last_updated = datetime.now(timezone.utc).isoformat()
         await self.store.async_save({"prefixes": self.prefixes, "last_updated": self.last_updated,
                                      "last_attempt": self.last_attempt, "sources": self.source_status})
         return len(found)
