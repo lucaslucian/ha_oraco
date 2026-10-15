@@ -24,6 +24,8 @@ jobs:
           node-version: "22"
       - name: Check dashboard JavaScript syntax
         run: node --check custom_components/ha_oraco/frontend/ha-oraco-panel.js
+      - name: Execute frontend runtime smoke tests
+        run: node devtools/test_frontend_runtime.cjs
       - name: Validate manifest and translations JSON
         run: |
           python - <<'PY'
