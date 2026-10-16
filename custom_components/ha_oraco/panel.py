@@ -54,7 +54,7 @@ async def dashboard_data(hass, connection, msg):
             "recent_changes": data.get("recent_changes", []),
             "endpoint_catalog": [
                 {"key": key, "path": path, "description": description,
-                 "interval_seconds": seconds}
+                 "interval_seconds": int(coordinator.update_interval.total_seconds()) if key in ("ports", "traffic") else seconds}
                 for key, path, description, seconds in ENDPOINT_CATALOG
             ],
             "oui": {"prefix_count": len(coordinator.vendors.prefixes) if coordinator.vendors else 0,
