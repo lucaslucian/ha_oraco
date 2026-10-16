@@ -863,7 +863,7 @@ class HaOracoPanel extends HTMLElement {
       function table(items) { return '<div class="scroll"><table><thead><tr><th>Interface</th><th>Link</th><th>Velocidade</th><th>RX</th><th>TX</th><th>Pico RX</th><th>Pico TX</th></tr></thead><tbody>'+items.map(row).join("")+'</tbody></table></div>'; }
     }
     this.shadowRoot.innerHTML = `<style>
-      :host{zoom:${fontScale}}
+      :host{--hora-scale:${fontScale}}
       :host { display:block; min-height:100%; color:var(--primary-text-color); background:var(--primary-background-color); font-family:Roboto,"Arial",sans-serif; }
       *{box-sizing:border-box} main{max-width:1480px;margin:auto;padding:24px;} header{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:22px}
       .brand-wrap{display:flex;flex-direction:column;gap:4px}.brand-subtitle{font-size:12px;color:var(--secondary-text-color);padding-left:50px}.brand{display:flex;align-items:center;gap:12px}.brand img{width:38px;height:38px;object-fit:contain} h1{font-size:24px;font-weight:500;margin:0}h2{font-size:19px;font-weight:500;margin:0}h3{font-size:15px;font-weight:500;margin:0 0 18px}
@@ -924,6 +924,14 @@ class HaOracoPanel extends HTMLElement {
       button:focus-visible,input:focus-visible{outline:2px solid var(--primary-color);outline-offset:2px}
 
 
+      /* Font-scale respects document width; never zoom the host's layout box. */
+      :host main,:host .audit-dialog{font-size:calc(14px * var(--hora-scale))}
+      :host :is(nav button,button,input,select,label,td,th,summary,.muted,.section-subtitle,.footnote,.detail-item,.detail-grid, .kv){font-size:calc(12px * var(--hora-scale))}
+      :host h1{font-size:calc(24px * var(--hora-scale))}
+      :host h2{font-size:calc(19px * var(--hora-scale))}
+      :host h3{font-size:calc(15px * var(--hora-scale))}
+      :host .metric strong{font-size:clamp(20px,calc(24px * var(--hora-scale)),36px)}
+      :host .card{overflow-wrap:break-word}
       /* 0.4.28: consistent, accessible data-heavy dashboard surfaces */
       :host{--hora-rx:#29ade3;--hora-tx:#49bf87;--hora-warn:#d99b55}
       main{width:100%;max-width:1560px;padding:clamp(12px,2.2vw,30px)}
