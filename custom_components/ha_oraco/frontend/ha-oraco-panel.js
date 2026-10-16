@@ -21,6 +21,9 @@ class HaOracoPanel extends HTMLElement {
     this.devicePortFilter = "all";
     this.deviceVlanFilter = "all";
     this.deviceVendorFilter = "all";
+    this.macPages = {};
+    this.ddmiState = {};
+    this.endpointSelection = {};
   }
   set hass(value) {
     this._hass = value;
@@ -62,6 +65,73 @@ class HaOracoPanel extends HTMLElement {
     finally { this.busy = false; this.render(); this.loadCurrentCharts(true); this.loadSfpTemperature(); this.loadSfpOptics(); this.loadStorageStats(); }
   }
 
+  async refreshDdmi(switchId) {
+    if(!this._hass || this.ddmiState[switchId]?.loading)return;
+    this.ddmiState[switchId]={loading:true};
+    this.render();
+    try {
+      const result=await this._hass.connection.sendMessagePromise({
+        type:"ha_oraco/ddmi_refresh",entry_id:switchId
+      });
+      this.ddmiState[switchId]=result&&typeof result==="object"?result:
+        {status:"error",error:"Resposta inválida"};
+      if(result?.status==="ok")await this.refresh();
+    } catch(error) {
+      this.ddmiState[switchId]={status:"error",error:this.readableError(error)};
+    }
+    this.render();
+  }
+  macSettings(sw) {
+    const defaults={query:"",port:"all",vlan:"all",vendor:"all",page_size:50,height:440};
+    return {...defaults,...(sw.preferences?.options?.mac_view||{})};
+  }
+  endpointDocs(sw) {
+    const catalog=sw.endpoint_catalog||[];
+    const selected=this.endpointSelection[sw.id]||catalog[0]?.key;
+    const item=catalog.find(x=>x.key===selected)||catalog[0];
+    if(!item)return '<section class="card"><p class="muted">Catálogo indisponível nesta versão.</p></section>';
+    const endpoint=sw.diagnostics?.endpoints?.[item.key]||{};
+    const payload=item.key==="sfp"?sw.sfp?.sfp:item.key==="ports"?sw.ports:
+      item.key==="traffic"?sw.ports:item.key==="mac"?sw.mac:sw.network?.[item.key];
+    const fields=payload&&typeof payload==="object"?Object.keys(payload):[];
+    const status=endpoint.status||((item.key==="ports"||item.key==="traffic")?"Coleta principal":"Ainda não consultado");
+    return '<section class="card"><h3>Explorador de endpoints · somente leitura</h3>'+
+      '<p class="section-subtitle">Documentação dos caminhos CGI aprovados. Não executa comandos no switch; os exemplos vêm do último cache recebido pelo Home Assistant.</p>'+
+      '<label class="endpoint-picker">Recurso<select data-endpoint-select="'+this.escape(sw.id)+'" aria-label="Escolher endpoint">'+
+      catalog.map(entry=>'<option value="'+this.escape(entry.key)+'" '+(item.key===entry.key?'selected':'')+'>'+this.escape(entry.description)+'</option>').join('')+'</select></label>'+
+      '<div class="detail-grid"><div class="detail-item"><small>Método</small><strong>GET (leitura)</strong></div>'+
+      '<div class="detail-item"><small>Caminho</small><strong>'+this.escape(item.path)+'</strong></div>'+
+      '<div class="detail-item"><small>Periodicidade planejada</small><strong>'+this.escape(item.interval_seconds)+' s</strong></div>'+
+      '<div class="detail-item"><small>Diagnóstico</small><strong>'+this.escape(status)+'</strong></div></div>'+
+      '<p class="muted">Último sucesso: '+this.escape(this.formatAuditDate(endpoint.last_success||sw.diagnostics?.last_success))+
+      (endpoint.error?' · Erro: '+this.escape(endpoint.error):'')+'</p>'+
+      '<h4>Campos identificados</h4><p class="muted">'+(fields.length?fields.map(x=>this.escape(x)).join(" · "):"Sem estrutura validada no cache atual")+'</p>'+
+      '<details><summary>Visualizar dados atuais (cache local)</summary><pre class="endpoint-json">'+
+      this.escape(payload===undefined||payload===null?"Nenhum dado disponível":JSON.stringify(payload,null,2).slice(0,12000))+
+      '</pre></details><p class="footnote">Saídas exibidas apenas ao administrador; não incluem HTML bruto, cookies ou senhas. Dados ausentes não comprovam que o equipamento suporta o recurso.</p></section>';
+  }
+  networkServices(sw) {
+    const dhcp=sw.network?.dhcp,igmp=sw.network?.igmp;
+    const ports=Object.keys(sw.ports||{}).sort((a,b)=>Number(a)-Number(b));
+    const groups=Array.isArray(igmp?.groups)?igmp.groups:[];
+    return '<section class="card"><h3>DHCP snooping e IGMP por porta</h3>'+
+      '<p class="section-subtitle">Leitura dos caminhos CGI conhecidos. Estados por porta só aparecem quando confirmados em tabelas com cabeçalhos explícitos.</p>'+
+      '<div class="inventory-stats"><div><small>DHCP snooping</small><strong>'+(!dhcp?"Indisponível":dhcp.enabled?"Ativado":"Desativado")+'</strong></div>'+
+      '<div><small>IGMP snooping</small><strong>'+(!igmp?"Indisponível":igmp.enabled?"Ativado":"Desativado")+'</strong></div>'+
+      '<div><small>Grupos IGMP identificados</small><strong>'+groups.length+'</strong></div></div>'+
+      '<div class="scroll"><table><thead><tr><th>Porta</th><th>Confiabilidade DHCP</th><th>Grupos IGMP</th></tr></thead><tbody>'+
+      ports.map(port=>{
+        const trusted=dhcp?.per_port?.[port]?.trusted;
+        const membership=igmp?.per_port?.[port]||[];
+        return '<tr><td>Porta '+this.escape(port)+'</td><td>'+(!dhcp?.trust_status_available||trusted===undefined?"Não informado pelo firmware":trusted?"Confiável":"Não confiável")+'</td><td>'+
+          (membership.length?membership.map(g=>this.escape(g.group)+' (VLAN '+this.escape(g.vlan)+')').join(" · "):"Nenhum grupo identificado")+
+          '</td></tr>';
+      }).join('')+'</tbody></table></div>'+
+      (groups.length?'<h4>Grupos encontrados</h4><div class="scroll"><table><thead><tr><th>Grupo/IP</th><th>VLAN</th><th>Portas informadas</th></tr></thead><tbody>'+
+      groups.map(g=>'<tr><td>'+this.escape(g.ip)+'</td><td>'+this.escape(g.vlan)+'</td><td>'+this.escape(g.ports)+'</td></tr>').join('')+
+      '</tbody></table></div>':'<p class="muted">Nenhuma associação IGMP confirmada. O firmware pode não fornecer esta tabela.</p>')+
+      '<p class="footnote">Não interpreta formulários de configuração como prova de estado operacional e não modifica confiança de portas nem grupos multicast.</p></section>';
+  }
   loadCurrentCharts(refresh=false) {
     if(!this._hass||!this.data||this.tab!=="history")return;
     for(const sw of this.data.switches||[]){
@@ -649,7 +719,9 @@ class HaOracoPanel extends HTMLElement {
     if (!this.shadowRoot) return;
     const switches = this.data?.switches || [];
     const compact=switches[0]?this.pref(switches[0],"options","compact",false):false;
-    const tabs = [["overview","Visão geral"],["ports","Portas"],["history","Histórico"],["sfp","SFP+"],["mac","Dispositivos"],["vlan","VLANs"],["protection","Proteções"],["topology","Mapa de rede"],["system","Sistema"]];
+    const fontScale=([0.9,1,1.1,1.2,1.35].includes(switches[0]?.preferences?.options?.font_scale))
+      ? switches[0].preferences.options.font_scale : 1;
+    const tabs = [["overview","Visão geral"],["ports","Portas"],["history","Histórico"],["sfp","SFP+"],["mac","Dispositivos"],["vlan","VLANs"],["protection","Proteções"],["topology","Mapa de rede"],["system","Sistema"],["services","DHCP / IGMP"],["endpoints","Endpoints"]];
     let body = this.error ? '<section class="card">Não foi possível consultar os dados. '+this.escape(this.error)+'</section>' : "";
     if (!switches.length && !this.error) body = '<section class="card">Nenhum switch configurado ou aguardando dados.</section>';
     for (const sw of switches) {
@@ -678,15 +750,32 @@ class HaOracoPanel extends HTMLElement {
           +'<label>Período'+this.ranges(sw.id,selected)+'</label></div>'
           +this.trafficChart(sw.id,selected==="__total__"?null:selected)+this.dailyTable(sw.id,selected)+'</section>';
       }
-      else if(this.tab === "sfp") body += '<section class="card"><h3>Transceptor óptico · agora</h3><p class="section-subtitle">Medições e identificação atuais do módulo</p>'+this.renderSfp(sw)+this.snapshots(sw.id,'sfp','SFP+')+'</section>'+this.sfpTemperatureChart(sw)+this.sfpOpticalCharts(sw);
+      else if(this.tab === "sfp") {
+        const ddmi=this.ddmiState[sw.id]||{};
+        const message=ddmi.loading?"Consultando módulo…":ddmi.status==="ok"?"Atualizado em "+this.formatAuditDate(ddmi.last_success):
+          ddmi.status==="rate_limited"||ddmi.status==="busy"?"Aguarde "+ddmi.retry_after+" s antes de consultar novamente.":
+          ddmi.status==="error"?"Falha: "+this.escape(ddmi.error):"Coleta automática a cada 60 segundos.";
+        body+='<section class="card"><h3>Transceptor óptico · agora</h3>'+
+          '<div class="history-controls"><button class="history-action" data-ddmi-refresh="'+this.escape(sw.id)+'" '+(ddmi.loading?'disabled':'')+'>Atualizar DDMI agora</button>'+
+          '<span class="muted" role="status">'+message+'</span></div>'+
+          '<p class="section-subtitle">Consulta somente leitura, protegida por intervalo mínimo de 30 segundos.</p>'+
+          this.renderSfp(sw)+this.snapshots(sw.id,'sfp','SFP+')+'</section>'+
+          this.sfpTemperatureChart(sw)+this.sfpOpticalCharts(sw);
+      }
+      else if(this.tab === "services") body+=this.networkServices(sw);
+      else if(this.tab === "endpoints") body+=this.endpointDocs(sw);
       else if(this.tab === "mac") {
         const macData=sw.mac||{};
         const macRows=macData.mac_history_entries||macData.mac_entries||[];
-        const matches=macRows.filter(e=>(this.devicePortFilter==="all"||String(e.port)===this.devicePortFilter)&&
-          (this.deviceVlanFilter==="all"||String(e.vlan)===this.deviceVlanFilter)&&
-          (this.deviceVendorFilter==="all"||(e.vendor||"Desconhecido")===this.deviceVendorFilter)&&
-          (JSON.stringify(e).toLowerCase().includes(this.macFilter.toLowerCase())||
-          this.pref(sw,"devices",e.mac,"").toLowerCase().includes(this.macFilter.toLowerCase())));
+        const filter=this.macSettings(sw);
+        const matches=macRows.filter(e=>(filter.port==="all"||String(e.port)===filter.port)&&
+          (filter.vlan==="all"||String(e.vlan)===filter.vlan)&&
+          (filter.vendor==="all"||(e.vendor||"Desconhecido")===filter.vendor)&&
+          (JSON.stringify(e).toLowerCase().includes(filter.query.toLowerCase())||
+          this.pref(sw,"devices",e.mac,"").toLowerCase().includes(filter.query.toLowerCase())));
+        const maxPage=Math.max(1,Math.ceil(matches.length/filter.page_size));
+        const page=Math.min(maxPage,Math.max(1,this.macPages[sw.id]||1));
+        const visible=matches.slice((page-1)*filter.page_size,page*filter.page_size);
         const stamp=v=>{if(!v)return '—';const d=new Date(v);return Number.isFinite(d.getTime())?d.toLocaleString('pt-BR'):this.escape(v);};
         const count=sw.oui?.prefix_count||0;
         body+='<section class="card"><h3>Inventário e histórico de dispositivos</h3>'
@@ -695,13 +784,17 @@ class HaOracoPanel extends HTMLElement {
           +'<div><small>Fabricantes identificados</small><strong>'+this.escape(macData.mac_vendor_matched??0)+'</strong></div>'
           +'<div><small>Base IEEE</small><strong>'+this.escape(count?count.toLocaleString('pt-BR')+' prefixos':'Não carregada')+'</strong></div></div>'
           +'<p class="section-subtitle">Histórico persistente: primeira e última observação, porta, VLAN e fabricante. OUI atualizado: '+stamp(sw.oui?.last_updated)+'</p>'
-          +'<div class="inventory-filters"><input id="mac-filter" type="search" placeholder="Pesquisar MAC, nome ou fabricante" value="'+this.escape(this.macFilter)+'" aria-label="Pesquisar inventário">'+
-          '<select data-inventory-filter="port"><option value="all">Todas as portas</option>'+[...new Set(macRows.map(e=>String(e.port||"")))].sort((a,b)=>Number(a)-Number(b)).map(v=>'<option value="'+this.escape(v)+'" '+(this.devicePortFilter===v?'selected':'')+'>Porta '+this.escape(v)+'</option>').join("")+'</select>'+
-          '<select data-inventory-filter="vlan"><option value="all">Todas as VLANs</option>'+[...new Set(macRows.map(e=>String(e.vlan||"")))].sort().map(v=>'<option value="'+this.escape(v)+'" '+(this.deviceVlanFilter===v?'selected':'')+'>VLAN '+this.escape(v)+'</option>').join("")+'</select>'+
-          '<select data-inventory-filter="vendor"><option value="all">Todos os fabricantes</option>'+[...new Set(macRows.map(e=>e.vendor||"Desconhecido"))].sort().map(v=>'<option value="'+this.escape(v)+'" '+(this.deviceVendorFilter===v?'selected':'')+'>'+this.escape(v)+'</option>').join("")+'</select></div><p class="muted">'+matches.length+' registros filtrados</p>'
-          +'<div class="scroll"><table><thead><tr><th>Dispositivo / MAC</th><th>Porta</th><th>VLAN</th><th>Fabricante / classificação</th><th>Primeira observação</th><th>Última observação</th></tr></thead><tbody>'
-          +matches.map(e=>'<tr><td><button class="mac-name-button" data-name-mac="'+this.escape(sw.id)+'" data-mac="'+this.escape(e.mac)+'" title="Editar nome do dispositivo">'+this.escape(this.pref(sw,"devices",e.mac,"Nomear"))+'</button><small>'+this.escape(e.mac)+'</small></td><td>'+this.escape(this.pref(sw,"ports",String(e.port),"Porta "+e.port))+'</td><td>'+this.escape(e.vlan)+'</td><td>'+this.escape(e.vendor||e.classification)+'</td><td>'+stamp(e.first_seen)+'</td><td>'+stamp(e.last_seen)+'</td></tr>').join('')
-          +'</tbody></table></div><p class="footnote">Exibindo até 200 registros recentes do histórico do switch. MACs administrados localmente não permitem atribuição confiável por OUI.</p></section>';
+          +'<div class="inventory-filters"><label>Pesquisar<input data-mac-setting="query" data-switch-id="'+this.escape(sw.id)+'" type="search" placeholder="MAC, nome, fabricante" value="'+this.escape(filter.query)+'"></label>'+
+          '<label>Porta<select data-mac-setting="port" data-switch-id="'+this.escape(sw.id)+'"><option value="all">Todas as portas</option>'+[...new Set(macRows.map(e=>String(e.port||"")))].sort((a,b)=>Number(a)-Number(b)).map(v=>'<option value="'+this.escape(v)+'" '+(filter.port===v?'selected':'')+'>Porta '+this.escape(v)+'</option>').join("")+'</select></label>'+
+          '<label>VLAN<select data-mac-setting="vlan" data-switch-id="'+this.escape(sw.id)+'"><option value="all">Todas as VLANs</option>'+[...new Set(macRows.map(e=>String(e.vlan||"")))].sort().map(v=>'<option value="'+this.escape(v)+'" '+(filter.vlan===v?'selected':'')+'>VLAN '+this.escape(v)+'</option>').join("")+'</select></label>'+
+          '<label>Fabricante<select data-mac-setting="vendor" data-switch-id="'+this.escape(sw.id)+'"><option value="all">Todos os fabricantes</option>'+[...new Set(macRows.map(e=>e.vendor||"Desconhecido"))].sort().map(v=>'<option value="'+this.escape(v)+'" '+(filter.vendor===v?'selected':'')+'>'+this.escape(v)+'</option>').join("")+'</select></label>'+
+          '<label>Por página<select data-mac-setting="page_size" data-switch-id="'+this.escape(sw.id)+'">'+[25,50,100,200].map(n=>'<option value="'+n+'" '+(filter.page_size===n?'selected':'')+'>'+n+'</option>').join("")+'</select></label>'+
+          '<label>Altura<select data-mac-setting="height" data-switch-id="'+this.escape(sw.id)+'">'+[280,440,600,800].map(n=>'<option value="'+n+'" '+(filter.height===n?'selected':'')+'>'+n+' px</option>').join("")+'</select></label>'+
+          '<button class="history-action" data-mac-reset="'+this.escape(sw.id)+'">Limpar filtros</button></div>'+
+          '<p class="muted" role="status">'+matches.length+' registros encontrados · Página '+page+' de '+maxPage+'</p>'
+          +'<div class="scroll mac-table-scroll" style="max-height:'+Number(filter.height)+'px" tabindex="0" aria-label="Tabela de dispositivos, role para navegar"><table><thead><tr><th>Dispositivo / MAC</th><th>Porta</th><th>VLAN</th><th>Fabricante / classificação</th><th>Primeira observação</th><th>Última observação</th></tr></thead><tbody>'
+          +visible.map(e=>'<tr><td><button class="mac-name-button" data-name-mac="'+this.escape(sw.id)+'" data-mac="'+this.escape(e.mac)+'" title="Editar nome do dispositivo">'+this.escape(this.pref(sw,"devices",e.mac,"Nomear"))+'</button><small>'+this.escape(e.mac)+'</small></td><td>'+this.escape(this.pref(sw,"ports",String(e.port),"Porta "+e.port))+'</td><td>'+this.escape(e.vlan)+'</td><td>'+this.escape(e.vendor||e.classification)+'</td><td>'+stamp(e.first_seen)+'</td><td>'+stamp(e.last_seen)+'</td></tr>').join('')
+          +'</tbody></table></div><div class="mac-pager"><button class="history-action" data-mac-page="'+this.escape(sw.id)+'" data-page="'+(page-1)+'" '+(page<=1?'disabled':'')+'>Anterior</button><span>Página '+page+' / '+maxPage+'</span><button class="history-action" data-mac-page="'+this.escape(sw.id)+'" data-page="'+(page+1)+'" '+(page>=maxPage?'disabled':'')+'>Próxima</button></div><p class="footnote">Exibindo até 200 registros recentes do histórico do switch. MACs administrados localmente não permitem atribuição confiável por OUI.</p></section>';
       }
       else if(this.tab === "topology") body += '<section class="card"><h3>Mapa lógico · edição de posições</h3><p class="section-subtitle">Organização visual personalizável; conexões representam MACs aprendidos, não enlaces físicos confirmados.</p>'+this.topologyBoard(sw)+'<details><summary>Visualização automática por porta</summary>'+this.topologyMap(sw)+'</details></section>';
       else if(this.tab === "protection") {
@@ -770,6 +863,7 @@ class HaOracoPanel extends HTMLElement {
       function table(items) { return '<div class="scroll"><table><thead><tr><th>Interface</th><th>Link</th><th>Velocidade</th><th>RX</th><th>TX</th><th>Pico RX</th><th>Pico TX</th></tr></thead><tbody>'+items.map(row).join("")+'</tbody></table></div>'; }
     }
     this.shadowRoot.innerHTML = `<style>
+      :host{--hora-scale:${fontScale}}
       :host { display:block; min-height:100%; color:var(--primary-text-color); background:var(--primary-background-color); font-family:Roboto,"Arial",sans-serif; }
       *{box-sizing:border-box} main{max-width:1480px;margin:auto;padding:24px;} header{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:22px}
       .brand-wrap{display:flex;flex-direction:column;gap:4px}.brand-subtitle{font-size:12px;color:var(--secondary-text-color);padding-left:50px}.brand{display:flex;align-items:center;gap:12px}.brand img{width:38px;height:38px;object-fit:contain} h1{font-size:24px;font-weight:500;margin:0}h2{font-size:19px;font-weight:500;margin:0}h3{font-size:15px;font-weight:500;margin:0 0 18px}
@@ -808,7 +902,17 @@ class HaOracoPanel extends HTMLElement {
       .compact-view .card{padding:13px;margin-bottom:10px}
       .compact-view .stats{gap:9px}.compact-view .metric strong{font-size:20px}
       .compact-view .optical-item{padding:10px}
-      .inventory-filters{display:flex;flex-wrap:wrap;gap:9px;margin:14px 0}
+      .inventory-filters{display:flex;flex-wrap:wrap;gap:9px;margin:14px 0;align-items:flex-end}
+      .inventory-filters label,.endpoint-picker,.scale-picker{display:flex;flex-direction:column;gap:5px;font-size:12px;color:var(--secondary-text-color)}
+      .mac-table-scroll{overflow:auto;min-height:120px;overscroll-behavior:contain;border:1px solid var(--divider-color);border-radius:9px}
+      .mac-table-scroll th{top:0}
+      .mac-pager{display:flex;gap:12px;align-items:center;justify-content:flex-end;padding:12px 0;flex-wrap:wrap}
+      .mac-pager button:disabled,.history-action:disabled{opacity:.45;cursor:not-allowed}
+      .endpoint-picker select,.scale-picker select{border:1px solid var(--divider-color);border-radius:9px;padding:9px;background:var(--card-background-color);color:var(--primary-text-color);max-width:100%}
+      .endpoint-json{max-height:360px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;padding:14px;background:var(--secondary-background-color);border-radius:8px;font-size:12px}
+      .endpoint-picker{margin-bottom:16px}
+      @media(max-width:720px){.inventory-filters label{width:100%;min-width:0}.inventory-filters input,.inventory-filters select{width:100%;min-width:0}.header-actions{flex-wrap:wrap}.mac-pager{justify-content:center}}
+      @media(max-width:390px){.card{padding:12px}.endpoint-json{font-size:11px}}
       .inventory-filters input,.inventory-filters select{border:1px solid var(--divider-color);border-radius:9px;padding:9px;background:var(--card-background-color);color:var(--primary-text-color);min-width:170px}
       .mac-name-button{padding:3px 0;border:0;color:var(--primary-color);font-weight:600;text-align:left}
       td .mac-name-button+small{display:block;font-size:11px}
@@ -820,6 +924,14 @@ class HaOracoPanel extends HTMLElement {
       button:focus-visible,input:focus-visible{outline:2px solid var(--primary-color);outline-offset:2px}
 
 
+      /* Font-scale respects document width; never zoom the host's layout box. */
+      :host main,:host .audit-dialog{font-size:calc(14px * var(--hora-scale))}
+      :host :is(nav button,button,input,select,label,td,th,summary,.muted,.section-subtitle,.footnote,.detail-item,.detail-grid, .kv){font-size:calc(12px * var(--hora-scale))}
+      :host h1{font-size:calc(24px * var(--hora-scale))}
+      :host h2{font-size:calc(19px * var(--hora-scale))}
+      :host h3{font-size:calc(15px * var(--hora-scale))}
+      :host .metric strong{font-size:clamp(20px,calc(24px * var(--hora-scale)),36px)}
+      :host .card{overflow-wrap:break-word}
       /* 0.4.28: consistent, accessible data-heavy dashboard surfaces */
       :host{--hora-rx:#29ade3;--hora-tx:#49bf87;--hora-warn:#d99b55}
       main{width:100%;max-width:1560px;padding:clamp(12px,2.2vw,30px)}
@@ -969,7 +1081,13 @@ class HaOracoPanel extends HTMLElement {
       .chart-legend{display:flex;gap:17px;flex-wrap:wrap;font-size:11px;color:var(--secondary-text-color);margin:3px 0 0 22px}
       .traffic-chart{max-height:190px}.card{border-radius:14px}.metric{min-width:0}.metric strong{overflow-wrap:anywhere}
       @media(max-width:950px){.stats{grid-template-columns:repeat(2,minmax(0,1fr))}.columns{grid-template-columns:1fr}}@media(max-width:500px){main{padding:14px}.stats{gap:8px}.card{padding:14px}.metric strong{font-size:20px}}
-    </style><main class="${compact?'compact-view':''}"><header><div class="brand-wrap"><h1 class="brand"><img src="/ha_oraco_static/brand/icon.svg" alt="" aria-hidden="true"/> HoraInfo</h1><div class="brand-subtitle">${this.escape(switches.length===1?(switches[0].device?.name||switches[0].device?.model||switches[0].host):switches.length+" equipamentos monitorados")}</div></div><div class="header-actions"><button class="refresh" data-compact-toggle="true">${compact?'Exibição normal':'Exibição compacta'}</button><button class="refresh" id="refresh">Atualizar</button></div></header>
+      /* Override pixel-sized legacy rules inside Shadow DOM at the end of CSS. */
+      h1{font-size:${24*fontScale}px!important}
+      h2{font-size:${19*fontScale}px!important}
+      h3{font-size:${15*fontScale}px!important}
+      button,input,select,label,td,th,summary,small,.muted,.section-subtitle,.footnote{font-size:${12*fontScale}px!important}
+      .metric strong{font-size:${24*fontScale}px!important}
+    </style><main class="${compact?'compact-view':''}"><header><div class="brand-wrap"><h1 class="brand"><img src="/ha_oraco_static/brand/icon.svg" alt="" aria-hidden="true"/> HoraInfo</h1><div class="brand-subtitle">${this.escape(switches.length===1?(switches[0].device?.name||switches[0].device?.model||switches[0].host):switches.length+" equipamentos monitorados")}</div></div><div class="header-actions"><label class="scale-picker">Tamanho do texto<select data-font-scale="true" aria-label="Escala da interface">${[0.9,1,1.1,1.2,1.35].map(n=>'<option value="'+n+'" '+(fontScale===n?'selected':'')+'>'+Math.round(n*100)+'%</option>').join('')}</select></label><button class="refresh" data-compact-toggle="true">${compact?'Exibição normal':'Exibição compacta'}</button><button class="refresh" id="refresh">Atualizar</button></div></header>
     <nav>${tabs.map(([id,label])=>'<button data-tab="'+id+'" class="'+(id===this.tab?"selected":"")+'">'+label+'</button>').join("")}</nav>
     ${body}</main>${this.snapshotDialog()}${this.portDialog()}`;
     this.shadowRoot.querySelectorAll("[data-edit-manual]").forEach(btn=>btn.addEventListener("click",event=>{
@@ -1112,11 +1230,34 @@ class HaOracoPanel extends HTMLElement {
       const sw=(this.data?.switches||[]).find(x=>x.id===btn.dataset.nameMac);
       if(sw)this.askName(sw,"devices",btn.dataset.mac,this.pref(sw,"devices",btn.dataset.mac,""));
     }));
-    this.shadowRoot.querySelectorAll("[data-inventory-filter]").forEach(el=>el.addEventListener("change",()=>{
-      if(el.dataset.inventoryFilter==="port")this.devicePortFilter=el.value;
-      if(el.dataset.inventoryFilter==="vlan")this.deviceVlanFilter=el.value;
-      if(el.dataset.inventoryFilter==="vendor")this.deviceVendorFilter=el.value;
-      this.render();
+    this.shadowRoot.querySelectorAll("[data-ddmi-refresh]").forEach(el=>el.addEventListener("click",()=>this.refreshDdmi(el.dataset.ddmiRefresh)));
+    this.shadowRoot.querySelectorAll("[data-endpoint-select]").forEach(el=>el.addEventListener("change",()=>{
+      this.endpointSelection[el.dataset.endpointSelect]=el.value;this.render();
+    }));
+    this.shadowRoot.querySelectorAll("[data-font-scale]").forEach(el=>el.addEventListener("change",()=>{
+      const sw=(this.data?.switches||[])[0];
+      if(sw)this.savePreference(sw,"options","font_scale",Number(el.value));
+    }));
+    this.shadowRoot.querySelectorAll("[data-mac-setting]").forEach(el=>el.addEventListener("change",()=>{
+      const sw=(this.data?.switches||[]).find(x=>x.id===el.dataset.switchId);
+      if(!sw)return;
+      const key=el.dataset.macSetting;
+      const value=["page_size","height"].includes(key)?Number(el.value):el.value;
+      const view={...this.macSettings(sw),[key]:value};
+      this.macPages[sw.id]=1;
+      this.savePreference(sw,"options","mac_view",view);
+    }));
+    this.shadowRoot.querySelectorAll("[data-mac-page]").forEach(el=>el.addEventListener("click",()=>{
+      const page=Number(el.dataset.page);
+      if(Number.isInteger(page)&&page>=1&&page<=8){
+        this.macPages[el.dataset.macPage]=page;this.render();
+      }
+    }));
+    this.shadowRoot.querySelectorAll("[data-mac-reset]").forEach(el=>el.addEventListener("click",()=>{
+      const sw=(this.data?.switches||[]).find(x=>x.id===el.dataset.macReset);
+      if(!sw)return;
+      this.macPages[sw.id]=1;
+      this.savePreference(sw,"options","mac_view",{query:"",port:"all",vlan:"all",vendor:"all",page_size:50,height:440});
     }));
     this.shadowRoot.querySelectorAll("[data-compact-toggle]").forEach(btn=>btn.addEventListener("click",()=>{
       const sw=(this.data?.switches||[])[0];
@@ -1125,7 +1266,7 @@ class HaOracoPanel extends HTMLElement {
     this.shadowRoot.querySelectorAll("[data-retry-history]").forEach(btn=>btn.addEventListener("click",()=>this.fetchHistory(btn.dataset.retryHistory,"traffic",btn.dataset.retryPort,Number(btn.dataset.retryHours))));
     this.shadowRoot.querySelectorAll("[data-refresh-storage]").forEach(btn=>btn.addEventListener("click",()=>this.fetchHistory(btn.dataset.refreshStorage,"storage")));
     this.shadowRoot.getElementById("refresh")?.addEventListener("click",()=>this.refresh());
-    this.shadowRoot.getElementById("mac-filter")?.addEventListener("change",ev=>{this.macFilter=ev.target.value;this.render()});
+
   }
 }
 customElements.define("ha-oraco-panel",HaOracoPanel);

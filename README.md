@@ -163,6 +163,35 @@ funcionalidades com os dois projetos que inspiraram o HoraInfo:
 [**Auditoria técnica e melhorias pendentes**](docs/AUDITORIA-2026-10-16.md).
 O relatório distingue bugs confirmados de recomendações ainda não implementadas.
 
+## Novidades da versão 0.4.40
+
+- **DDMI sob demanda:** a aba SFP+ oferece consulta imediata do transceptor por
+  `GET /transceiver.cgi`. O servidor aceita somente usuários administradores,
+  compartilha a sessão HTTP já serializada e limita requisições manuais a uma
+  tentativa a cada 30 segundos (inclusive após erro). A coleta periódica continua
+  funcionando; uma falha manual não deve exibir uma leitura antiga como atual.
+- **Tabela MAC ampliada:** pesquisa, filtros de porta/VLAN/fabricante, escolha
+  de linhas por página (25/50/100/200), altura da lista e navegação paginada.
+  Preferências são persistidas por switch no armazenamento Home Assistant; a
+  fonte atual ainda limita a consulta aos **200 registros mais recentes** do
+  inventário persistente — paginação é local, não busca todo o banco.
+- **Endpoints:** nova aba com caminhos de leitura aprovados, ciclo planejado,
+  último diagnóstico, campos encontrados e prévia dos dados já presentes no
+  cache. A aba não envia CGI adicionais.
+- **DHCP/IGMP:** nova aba com tabela por porta, apenas quando a resposta CGI
+  contém estrutura reconhecida. Formulários de vínculos estáticos DHCP não são
+  confundidos com estado de confiança; caso não exista tabela explícita, o campo
+  aparece como não informado pelo firmware. A apresentação de grupos IGMP
+  exige cabeçalhos reconhecidos e listas de portas inequívocas.
+- **Acessibilidade:** seletor de escala 90%, 100%, 110%, 120% ou 135%, salvo
+  no primeiro switch exibido e aplicado ao painel inteiro. Testes de layout
+  com Chromium real executam em 360, 390, 768, 1280 e 1600 px por GitHub Actions.
+
+**Validação OEM:** compatibilidade DHCP/IGMP deve ser confirmada com páginas
+HTML do modelo/firmware usado. O teste com fixtures confirma somente formatos
+reconhecidos, não comprova suporte em qualquer outro firmware. Nenhuma escrita
+de configuração, reinicialização ou alteração de firmware foi adicionada.
+
 ## Desenvolvimento e testes
 
 O repositório possui testes automatizados de parsers, páginas CGI reais e malformadas, sessão HTTP, contadores de tráfego, SQLite, inventário e componentes do painel. O fluxo [Offline validation](https://github.com/lucaslucian/ha_oraco/actions/workflows/offline-tests.yml) executa **pytest, validação JavaScript/JSON, Hassfest e verificação HACS**. O indicador no topo reflete o resultado publicado pelo GitHub Actions; uma execução bem-sucedida não substitui os testes no hardware real.

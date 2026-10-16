@@ -49,7 +49,7 @@ class DashboardPreferences:
                 type(v) not in (int,float) or not math.isfinite(v) or abs(v)>1000 for v in value.values()
             ) or value["low"]>=value["high"]:
                 raise ValueError("Invalid optical limits")
-        if category=="options" and key not in ("default_hours","compact"):
+        if category=="options" and key not in ("default_hours","compact","font_scale","mac_view"):
             raise ValueError("Invalid option")
         if category=="layout" and value is not None:
             if not isinstance(value,dict) or set(value)!={"x","y"} or any(type(v) not in (int,float) or not 0<=v<=100 for v in value.values()):
@@ -59,6 +59,18 @@ class DashboardPreferences:
                 raise ValueError("Invalid compact")
             if key=="default_hours" and value not in (1,6,12,24,72,120,168,360,720):
                 raise ValueError("Invalid range")
+            if key=="font_scale" and (type(value) not in (int,float) or value not in (0.9,1,1.1,1.2,1.35)):
+                raise ValueError("Invalid text scale")
+            if key=="mac_view":
+                if not isinstance(value,dict) or set(value)!={"query","port","vlan","vendor","page_size","height"}:
+                    raise ValueError("Invalid MAC view settings")
+                if any(not isinstance(value[k],str) or len(value[k])>80
+                       for k in ("query","port","vlan","vendor")):
+                    raise ValueError("Invalid MAC view filter")
+                if value["page_size"] not in (25,50,100,200) or type(value["page_size"]) is not int:
+                    raise ValueError("Invalid MAC page size")
+                if type(value["height"]) is not int or not 240<=value["height"]<=850:
+                    raise ValueError("Invalid MAC table height")
         elif category not in ("thresholds","layout","infrastructure") and (not isinstance(value,str) or len(value)>80):
             raise ValueError("Invalid label")
         updated=copy.deepcopy(self.data)

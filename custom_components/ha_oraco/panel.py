@@ -10,6 +10,23 @@ from .dashboard_preferences import DashboardPreferences
 
 PANEL_URL = "/ha_oraco_static/ha-oraco-panel.js"
 
+# Published diagnostics: only approved monitoring requests, never admin writes.
+ENDPOINT_CATALOG = (
+    ("ports", "/info.cgi", "Estado das portas e identificação", 30),
+    ("traffic", "/port.cgi?page=stats", "Contadores RX/TX", 30),
+    ("mac", "/mac.cgi?page=fwd_tbl", "Inventário MAC e VLAN", 120),
+    ("sfp", "/transceiver.cgi", "DDMI, identificação e níveis ópticos", 60),
+    ("dhcp", "/dhcp_snooping.cgi?page=dump", "DHCP snooping (conforme firmware)", 300),
+    ("igmp", "/igmp.cgi?page=dump", "IGMP snooping e grupos (conforme firmware)", 300),
+    ("jumbo", "/fwd.cgi?page=jumboframe", "Jumbo frames", 3600),
+    ("vlan_ports", "/vlan.cgi?page=port_based", "VLANs por porta", 600),
+    ("isolation", "/port.cgi?page=isolation", "Isolamento de portas", 600),
+    ("stp_ports", "/loop.cgi?page=stp_port", "STP por porta", 600),
+    ("storm_control", "/fwd.cgi?page=storm_ctrl", "Storm control", 600),
+    ("stp_global", "/loop.cgi?page=stp_global", "STP global", 600),
+    ("aggregation", "/trunk.cgi?page=group", "Agregação de links", 600),
+)
+
 @websocket_api.websocket_command({vol.Required("type"): "ha_oraco/dashboard"})
 @websocket_api.require_admin
 @websocket_api.async_response
@@ -35,6 +52,11 @@ async def dashboard_data(hass, connection, msg):
             "traffic_history": data.get("traffic_history", []),
             "traffic_by_port": data.get("traffic_by_port", {}),
             "recent_changes": data.get("recent_changes", []),
+            "endpoint_catalog": [
+                {"key": key, "path": path, "description": description,
+                 "interval_seconds": int(coordinator.update_interval.total_seconds()) if key in ("ports", "traffic") else seconds}
+                for key, path, description, seconds in ENDPOINT_CATALOG
+            ],
             "oui": {"prefix_count": len(coordinator.vendors.prefixes) if coordinator.vendors else 0,
                     "last_updated": coordinator.vendors.last_updated if coordinator.vendors else None,
                     "last_attempt": coordinator.vendors.last_attempt if coordinator.vendors else None,
@@ -80,6 +102,21 @@ async def history_data(hass, connection, msg):
         connection.send_result(msg["id"],{"items":result})
 
 @websocket_api.websocket_command({
+    vol.Required("type"): "ha_oraco/ddmi_refresh",
+    vol.Required("entry_id"): str,
+})
+@websocket_api.require_admin
+@websocket_api.async_response
+async def ddmi_refresh(hass, connection, msg):
+    coordinator = hass.data.get(DOMAIN, {}).get(msg["entry_id"])
+    if not hasattr(coordinator, "async_refresh_ddmi"):
+        connection.send_error(msg["id"], "not_found", "Unknown switch")
+        return
+    result = await coordinator.async_refresh_ddmi()
+    connection.send_result(msg["id"], result)
+
+
+@websocket_api.websocket_command({
     vol.Required("type"): "ha_oraco/preference",
     vol.Required("entry_id"): str,
     vol.Required("category"): vol.In(["ports","devices","layout","options","thresholds","infrastructure"]),
@@ -116,6 +153,7 @@ async def register_panel(hass):
     )
     websocket_api.async_register_command(hass, dashboard_data)
     websocket_api.async_register_command(hass, history_data)
+    websocket_api.async_register_command(hass, ddmi_refresh)
     websocket_api.async_register_command(hass, save_preference)
     frontend.async_register_built_in_panel(
         hass, "custom",
@@ -124,7 +162,7 @@ async def register_panel(hass):
         frontend_url_path="ha-oraco",
         config={"_panel_custom": {
             "name": "ha-oraco-panel",
-            "module_url": PANEL_URL + "?v=0.4.39",
+            "module_url": PANEL_URL + "?v=0.4.40",
             "embed_iframe": False,
             "trust_external": False,
         }},

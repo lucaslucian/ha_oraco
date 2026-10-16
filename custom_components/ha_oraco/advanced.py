@@ -109,35 +109,92 @@ def parse_sfp(html):
         )
     return out
 
+def _table_headers(table):
+    rows=table.find_all("tr")
+    if not rows:
+        return [], []
+    headers=[c.get_text(" ",strip=True).lower()
+             for c in rows[0].find_all(["th","td"],recursive=False)]
+    return headers,rows[1:]
+
+
+def _port_numbers(value):
+    """Accept unambiguous enumerated port lists, never infer unknown formats."""
+    cleaned=re.sub(r"(?i)\bports?\b", "", str(value or "")).strip()
+    if not cleaned or not re.fullmatch(r"\d+(?:\s*[,;/ ]\s*\d+)*",cleaned):
+        return []
+    return list(dict.fromkeys(str(int(v)) for v in re.findall(r"\d+",cleaned)
+                              if 1<=int(v)<=256))
+
+
 def parse_dhcp(html):
+    """Only explicit, readable trust status is reported per port.
+
+    Checkboxes from 'page=static' are static-binding form controls, not
+    evidence that an interface is trusted.
+    """
     soup = BeautifulSoup(html, "html.parser")
     enabled_field = soup.find("input", attrs={"name": "enable_dhcpsnp"})
     if enabled_field is None:
         raise ValueError("DHCP snooping page format not recognized")
-    ports = {}
-    form = soup.find("form", action=lambda v: bool(v and "page=static" in v))
-    if form:
-        for field in form.find_all("input", class_="chkp"):
-            label = form.find("label", attrs={"for": field.get("id")})
-            if label:
-                ports[label.get_text(" ", strip=True)] = field.has_attr("checked")
-    return {"enabled": enabled_field.has_attr("checked"), "trusted_ports": ports}
+    trusted={}
+    details={}
+    for table in soup.find_all("table"):
+        if table.find(["input","select","textarea"]):
+            continue
+        headers,rows=_table_headers(table)
+        port_col=next((i for i,h in enumerate(headers) if h in ("port","interface","port number")),None)
+        trust_col=next((i for i,h in enumerate(headers) if "trust" in h),None)
+        if port_col is None or trust_col is None:
+            continue
+        for row in rows:
+            cells=row.find_all("td",recursive=False)
+            if max(port_col,trust_col)>=len(cells):
+                continue
+            ports=_port_numbers(cells[port_col].get_text(" ",strip=True))
+            trust=cells[trust_col].get_text(" ",strip=True).lower()
+            if trust not in ("trusted","untrusted","yes","no","enabled","disabled","on","off"):
+                continue
+            for number in ports:
+                trusted[number]=trust in ("trusted","yes","enabled","on")
+                details[number]={"trusted":trusted[number],"source":"observed_status_table"}
+    return {"enabled": enabled_field.has_attr("checked"),
+            "trusted_ports":trusted,"per_port":details,
+            "trust_status_available":bool(details)}
+
 
 def parse_igmp(html):
     soup = BeautifulSoup(html, "html.parser")
     field = soup.find("input", attrs={"name": "enable_igmp"})
     if field is None:
         raise ValueError("IGMP snooping page format not recognized")
-    entries = []
+    entries=[]
+    per_port={}
     for table in soup.find_all("table"):
-        headers = [x.get_text(" ", strip=True).lower() for x in table.find_all("tr")[0].find_all(["td", "th"])] if table.find("tr") else []
-        if not (any("ip address" in h for h in headers) and any("vlan" in h for h in headers)):
+        headers,rows=_table_headers(table)
+        ip_col=next((i for i,h in enumerate(headers) if "ip address" in h or "group address" in h),None)
+        vlan_col=next((i for i,h in enumerate(headers) if "vlan" in h),None)
+        port_col=next((i for i,h in enumerate(headers) if "port" in h),None)
+        if None in (ip_col,vlan_col,port_col):
             continue
-        for tr in table.find_all("tr")[1:]:
-            cells = tr.find_all("td")
-            if len(cells) >= 3:
-                entries.append({"ip": cells[0].get_text(strip=True), "ports": cells[1].get_text(strip=True), "vlan": cells[2].get_text(strip=True)})
-    return {"enabled": field.has_attr("checked"), "groups": entries}
+        for row in rows:
+            cells=row.find_all("td",recursive=False)
+            if max(ip_col,vlan_col,port_col)>=len(cells):
+                continue
+            ip=cells[ip_col].get_text(" ",strip=True)
+            vlan=cells[vlan_col].get_text(" ",strip=True)
+            raw_ports=cells[port_col].get_text(" ",strip=True)
+            numbers=_port_numbers(raw_ports)
+            if not ip or not vlan:
+                continue
+            item={"ip":ip,"vlan":vlan,"ports":raw_ports,
+                  "port_numbers":numbers}
+            entries.append(item)
+            for number in numbers:
+                per_port.setdefault(number,[]).append({"group":ip,"vlan":vlan})
+    return {"enabled":field.has_attr("checked"),"groups":entries,
+            "per_port":per_port,"per_port_available":bool(per_port)}
+
 
 def parse_jumbo(html):
     soup = BeautifulSoup(html, "html.parser")

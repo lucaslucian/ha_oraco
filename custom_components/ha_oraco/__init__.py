@@ -1,6 +1,7 @@
 """HA Oraco: read-only multi-cadence Horaco monitoring."""
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timezone, timedelta
 from time import monotonic
 import logging
@@ -43,6 +44,43 @@ class HoracoCoordinator(DataUpdateCoordinator[dict]):
         self.prev_bytes = {}
         self.prev_time = None
         self.peak_rates = {"total": {"rx_bps": 0, "tx_bps": 0}, "ports": {}}
+        self._ddmi_lock = asyncio.Lock()
+        self._ddmi_last_attempt = float("-inf")
+
+    async def async_refresh_ddmi(self):
+        """Read-only DDMI refresh; 30-second cooldown including failed attempts."""
+        if self._ddmi_lock.locked():
+            return {"status": "busy", "retry_after": 30}
+        async with self._ddmi_lock:
+            remaining = 30 - (monotonic() - self._ddmi_last_attempt)
+            if remaining > 0:
+                return {"status": "rate_limited", "retry_after": max(1, int(remaining + 0.999))}
+            self._ddmi_last_attempt = monotonic()
+            try:
+                parsed = parse_sfp(await self.client.get("/transceiver.cgi"))
+            except Exception as err:
+                self.diagnostics["endpoints"]["sfp"] = {
+                    "status": "unavailable", "error": type(err).__name__,
+                    "last_attempt": datetime.now(timezone.utc).isoformat(),
+                }
+                self.cache.setdefault("sfp", {}).pop("sfp", None)
+                self.cache["diagnostics"] = dict(self.diagnostics)
+                self.async_set_updated_data(dict(self.cache))
+                return {"status": "error", "error": type(err).__name__}
+            stamp = datetime.now(timezone.utc).isoformat()
+            self.cache.setdefault("sfp", {})["sfp"] = parsed
+            self.last["sfp"] = monotonic()
+            self.diagnostics["sfp_fields"] = sorted(parsed)
+            self.diagnostics["endpoints"]["sfp"] = {"status": "ok", "last_success": stamp}
+            if self.history_db:
+                try:
+                    await self.history_db.record_snapshot("sfp", parsed)
+                except Exception as err:
+                    self.diagnostics["endpoints"]["sfp"]["history_error"] = type(err).__name__
+                    _LOGGER.warning("HoraInfo manual DDMI history error: %s", type(err).__name__)
+            self.cache["diagnostics"] = dict(self.diagnostics)
+            self.async_set_updated_data(dict(self.cache))
+            return {"status": "ok", "last_success": stamp}
 
     async def _async_update_data(self):
         now = monotonic()
@@ -124,7 +162,16 @@ class HoracoCoordinator(DataUpdateCoordinator[dict]):
             for name, interval, path, parser in plans:
                 if name not in self.last or now - self.last[name] >= interval:
                     try:
-                        parsed = parser(await self.client.get(path))
+                        if name == "sfp":
+                            # Share the cooldown and lock with the manual DDMI
+                            # command; regular and manual polls must not burst.
+                            async with self._ddmi_lock:
+                                if monotonic() - self._ddmi_last_attempt < 30:
+                                    continue
+                                self._ddmi_last_attempt = monotonic()
+                                parsed = parser(await self.client.get(path))
+                        else:
+                            parsed = parser(await self.client.get(path))
                         self.cache["sfp" if name == "sfp" else "network"][name] = parsed
                         if name == "sfp":
                             self.diagnostics["sfp_fields"] = sorted(parsed)
