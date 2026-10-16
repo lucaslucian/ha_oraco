@@ -146,7 +146,7 @@ def parse_dhcp(html):
     for table in soup.find_all("table"):
         if table.find(["input","select","textarea"]):
             continue
-        headers,rows=_table_headers(table,("port","trust"))
+        headers,rows=_table_headers(table,("trust",))
         port_col=next((i for i,h in enumerate(headers) if h in ("port","interface","port number")),None)
         trust_col=next((i for i,h in enumerate(headers) if "trust" in h),None)
         if port_col is None or trust_col is None:
@@ -179,7 +179,7 @@ def parse_igmp(html):
     for table in soup.find_all("table"):
         if table.find(["input","select","textarea"]):
             continue
-        headers,rows=_table_headers(table,("port","vlan"))
+        headers,rows=_table_headers(table,("port",))
         ip_col=next((i for i,h in enumerate(headers) if
             any(word in h for word in ("ip address","ip addr","group address",
                                        "multicast address","group ip"))),None)
