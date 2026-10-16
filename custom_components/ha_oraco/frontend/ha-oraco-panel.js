@@ -21,6 +21,9 @@ class HaOracoPanel extends HTMLElement {
     this.devicePortFilter = "all";
     this.deviceVlanFilter = "all";
     this.deviceVendorFilter = "all";
+    this.macPages = {};
+    this.ddmiState = {};
+    this.endpointSelection = {};
   }
   set hass(value) {
     this._hass = value;
@@ -62,6 +65,73 @@ class HaOracoPanel extends HTMLElement {
     finally { this.busy = false; this.render(); this.loadCurrentCharts(true); this.loadSfpTemperature(); this.loadSfpOptics(); this.loadStorageStats(); }
   }
 
+  async refreshDdmi(switchId) {
+    if(!this._hass || this.ddmiState[switchId]?.loading)return;
+    this.ddmiState[switchId]={loading:true};
+    this.render();
+    try {
+      const result=await this._hass.connection.sendMessagePromise({
+        type:"ha_oraco/ddmi_refresh",entry_id:switchId
+      });
+      this.ddmiState[switchId]=result&&typeof result==="object"?result:
+        {status:"error",error:"Resposta inválida"};
+      if(result?.status==="ok")await this.refresh();
+    } catch(error) {
+      this.ddmiState[switchId]={status:"error",error:this.readableError(error)};
+    }
+    this.render();
+  }
+  macSettings(sw) {
+    const defaults={query:"",port:"all",vlan:"all",vendor:"all",page_size:50,height:440};
+    return {...defaults,...(sw.preferences?.options?.mac_view||{})};
+  }
+  endpointDocs(sw) {
+    const catalog=sw.endpoint_catalog||[];
+    const selected=this.endpointSelection[sw.id]||catalog[0]?.key;
+    const item=catalog.find(x=>x.key===selected)||catalog[0];
+    if(!item)return '<section class="card"><p class="muted">Catálogo indisponível nesta versão.</p></section>';
+    const endpoint=sw.diagnostics?.endpoints?.[item.key]||{};
+    const payload=item.key==="sfp"?sw.sfp?.sfp:item.key==="ports"?sw.ports:
+      item.key==="traffic"?null:item.key==="mac"?sw.mac:sw.network?.[item.key];
+    const fields=payload&&typeof payload==="object"?Object.keys(payload):[];
+    const status=endpoint.status||((item.key==="ports"||item.key==="traffic")?"Coleta principal":"Ainda não consultado");
+    return '<section class="card"><h3>Explorador de endpoints · somente leitura</h3>'+
+      '<p class="section-subtitle">Documentação dos caminhos CGI aprovados. Não executa comandos no switch; os exemplos vêm do último cache recebido pelo Home Assistant.</p>'+
+      '<label class="endpoint-picker">Recurso<select data-endpoint-select="'+this.escape(sw.id)+'" aria-label="Escolher endpoint">'+
+      catalog.map(entry=>'<option value="'+this.escape(entry.key)+'" '+(item.key===entry.key?'selected':'')+'>'+this.escape(entry.description)+'</option>').join('')+'</select></label>'+
+      '<div class="detail-grid"><div class="detail-item"><small>Método</small><strong>GET (leitura)</strong></div>'+
+      '<div class="detail-item"><small>Caminho</small><strong>'+this.escape(item.path)+'</strong></div>'+
+      '<div class="detail-item"><small>Periodicidade planejada</small><strong>'+this.escape(item.interval_seconds)+' s</strong></div>'+
+      '<div class="detail-item"><small>Diagnóstico</small><strong>'+this.escape(status)+'</strong></div></div>'+
+      '<p class="muted">Último sucesso: '+this.escape(this.formatAuditDate(endpoint.last_success||sw.diagnostics?.last_success))+
+      (endpoint.error?' · Erro: '+this.escape(endpoint.error):'')+'</p>'+
+      '<h4>Campos identificados</h4><p class="muted">'+(fields.length?fields.map(x=>this.escape(x)).join(" · "):"Sem estrutura validada no cache atual")+'</p>'+
+      '<details><summary>Visualizar dados atuais (cache local)</summary><pre class="endpoint-json">'+
+      this.escape(payload===undefined||payload===null?"Nenhum dado disponível":JSON.stringify(payload,null,2).slice(0,12000))+
+      '</pre></details><p class="footnote">Saídas exibidas apenas ao administrador; não incluem HTML bruto, cookies ou senhas. Dados ausentes não comprovam que o equipamento suporta o recurso.</p></section>';
+  }
+  networkServices(sw) {
+    const dhcp=sw.network?.dhcp,igmp=sw.network?.igmp;
+    const ports=Object.keys(sw.ports||{}).sort((a,b)=>Number(a)-Number(b));
+    const groups=Array.isArray(igmp?.groups)?igmp.groups:[];
+    return '<section class="card"><h3>DHCP snooping e IGMP por porta</h3>'+
+      '<p class="section-subtitle">Leitura dos caminhos CGI conhecidos. Estados por porta só aparecem quando confirmados em tabelas com cabeçalhos explícitos.</p>'+
+      '<div class="inventory-stats"><div><small>DHCP snooping</small><strong>'+(!dhcp?"Indisponível":dhcp.enabled?"Ativado":"Desativado")+'</strong></div>'+
+      '<div><small>IGMP snooping</small><strong>'+(!igmp?"Indisponível":igmp.enabled?"Ativado":"Desativado")+'</strong></div>'+
+      '<div><small>Grupos IGMP identificados</small><strong>'+groups.length+'</strong></div></div>'+
+      '<div class="scroll"><table><thead><tr><th>Porta</th><th>Confiabilidade DHCP</th><th>Grupos IGMP</th></tr></thead><tbody>'+
+      ports.map(port=>{
+        const trusted=dhcp?.per_port?.[port]?.trusted;
+        const membership=igmp?.per_port?.[port]||[];
+        return '<tr><td>Porta '+this.escape(port)+'</td><td>'+(!dhcp?.trust_status_available||trusted===undefined?"Não informado pelo firmware":trusted?"Confiável":"Não confiável")+'</td><td>'+
+          (membership.length?membership.map(g=>this.escape(g.group)+' (VLAN '+this.escape(g.vlan)+')').join(" · "):"Nenhum grupo identificado")+
+          '</td></tr>';
+      }).join('')+'</tbody></table></div>'+
+      (groups.length?'<h4>Grupos encontrados</h4><div class="scroll"><table><thead><tr><th>Grupo/IP</th><th>VLAN</th><th>Portas informadas</th></tr></thead><tbody>'+
+      groups.map(g=>'<tr><td>'+this.escape(g.ip)+'</td><td>'+this.escape(g.vlan)+'</td><td>'+this.escape(g.ports)+'</td></tr>').join('')+
+      '</tbody></table></div>':'<p class="muted">Nenhuma associação IGMP confirmada. O firmware pode não fornecer esta tabela.</p>')+
+      '<p class="footnote">Não interpreta formulários de configuração como prova de estado operacional e não modifica confiança de portas nem grupos multicast.</p></section>';
+  }
   loadCurrentCharts(refresh=false) {
     if(!this._hass||!this.data||this.tab!=="history")return;
     for(const sw of this.data.switches||[]){
@@ -649,7 +719,7 @@ class HaOracoPanel extends HTMLElement {
     if (!this.shadowRoot) return;
     const switches = this.data?.switches || [];
     const compact=switches[0]?this.pref(switches[0],"options","compact",false):false;
-    const tabs = [["overview","Visão geral"],["ports","Portas"],["history","Histórico"],["sfp","SFP+"],["mac","Dispositivos"],["vlan","VLANs"],["protection","Proteções"],["topology","Mapa de rede"],["system","Sistema"]];
+    const tabs = [["overview","Visão geral"],["ports","Portas"],["history","Histórico"],["sfp","SFP+"],["mac","Dispositivos"],["vlan","VLANs"],["protection","Proteções"],["topology","Mapa de rede"],["system","Sistema"],["services","DHCP / IGMP"],["endpoints","Endpoints"]];
     let body = this.error ? '<section class="card">Não foi possível consultar os dados. '+this.escape(this.error)+'</section>' : "";
     if (!switches.length && !this.error) body = '<section class="card">Nenhum switch configurado ou aguardando dados.</section>';
     for (const sw of switches) {
@@ -678,15 +748,32 @@ class HaOracoPanel extends HTMLElement {
           +'<label>Período'+this.ranges(sw.id,selected)+'</label></div>'
           +this.trafficChart(sw.id,selected==="__total__"?null:selected)+this.dailyTable(sw.id,selected)+'</section>';
       }
-      else if(this.tab === "sfp") body += '<section class="card"><h3>Transceptor óptico · agora</h3><p class="section-subtitle">Medições e identificação atuais do módulo</p>'+this.renderSfp(sw)+this.snapshots(sw.id,'sfp','SFP+')+'</section>'+this.sfpTemperatureChart(sw)+this.sfpOpticalCharts(sw);
+      else if(this.tab === "sfp") {
+        const ddmi=this.ddmiState[sw.id]||{};
+        const message=ddmi.loading?"Consultando módulo…":ddmi.status==="ok"?"Atualizado em "+this.formatAuditDate(ddmi.last_success):
+          ddmi.status==="rate_limited"||ddmi.status==="busy"?"Aguarde "+ddmi.retry_after+" s antes de consultar novamente.":
+          ddmi.status==="error"?"Falha: "+this.escape(ddmi.error):"Coleta automática a cada 60 segundos.";
+        body+='<section class="card"><h3>Transceptor óptico · agora</h3>'+
+          '<div class="history-controls"><button class="history-action" data-ddmi-refresh="'+this.escape(sw.id)+'" '+(ddmi.loading?'disabled':'')+'>Atualizar DDMI agora</button>'+
+          '<span class="muted" role="status">'+message+'</span></div>'+
+          '<p class="section-subtitle">Consulta somente leitura, protegida por intervalo mínimo de 30 segundos.</p>'+
+          this.renderSfp(sw)+this.snapshots(sw.id,'sfp','SFP+')+'</section>'+
+          this.sfpTemperatureChart(sw)+this.sfpOpticalCharts(sw);
+      }
+      else if(this.tab === "services") body+=this.networkServices(sw);
+      else if(this.tab === "endpoints") body+=this.endpointDocs(sw);
       else if(this.tab === "mac") {
         const macData=sw.mac||{};
         const macRows=macData.mac_history_entries||macData.mac_entries||[];
-        const matches=macRows.filter(e=>(this.devicePortFilter==="all"||String(e.port)===this.devicePortFilter)&&
-          (this.deviceVlanFilter==="all"||String(e.vlan)===this.deviceVlanFilter)&&
-          (this.deviceVendorFilter==="all"||(e.vendor||"Desconhecido")===this.deviceVendorFilter)&&
-          (JSON.stringify(e).toLowerCase().includes(this.macFilter.toLowerCase())||
-          this.pref(sw,"devices",e.mac,"").toLowerCase().includes(this.macFilter.toLowerCase())));
+        const filter=this.macSettings(sw);
+        const matches=macRows.filter(e=>(filter.port==="all"||String(e.port)===filter.port)&&
+          (filter.vlan==="all"||String(e.vlan)===filter.vlan)&&
+          (filter.vendor==="all"||(e.vendor||"Desconhecido")===filter.vendor)&&
+          (JSON.stringify(e).toLowerCase().includes(filter.query.toLowerCase())||
+          this.pref(sw,"devices",e.mac,"").toLowerCase().includes(filter.query.toLowerCase())));
+        const maxPage=Math.max(1,Math.ceil(matches.length/filter.page_size));
+        const page=Math.min(maxPage,Math.max(1,this.macPages[sw.id]||1));
+        const visible=matches.slice((page-1)*filter.page_size,page*filter.page_size);
         const stamp=v=>{if(!v)return '—';const d=new Date(v);return Number.isFinite(d.getTime())?d.toLocaleString('pt-BR'):this.escape(v);};
         const count=sw.oui?.prefix_count||0;
         body+='<section class="card"><h3>Inventário e histórico de dispositivos</h3>'
@@ -695,13 +782,17 @@ class HaOracoPanel extends HTMLElement {
           +'<div><small>Fabricantes identificados</small><strong>'+this.escape(macData.mac_vendor_matched??0)+'</strong></div>'
           +'<div><small>Base IEEE</small><strong>'+this.escape(count?count.toLocaleString('pt-BR')+' prefixos':'Não carregada')+'</strong></div></div>'
           +'<p class="section-subtitle">Histórico persistente: primeira e última observação, porta, VLAN e fabricante. OUI atualizado: '+stamp(sw.oui?.last_updated)+'</p>'
-          +'<div class="inventory-filters"><input id="mac-filter" type="search" placeholder="Pesquisar MAC, nome ou fabricante" value="'+this.escape(this.macFilter)+'" aria-label="Pesquisar inventário">'+
-          '<select data-inventory-filter="port"><option value="all">Todas as portas</option>'+[...new Set(macRows.map(e=>String(e.port||"")))].sort((a,b)=>Number(a)-Number(b)).map(v=>'<option value="'+this.escape(v)+'" '+(this.devicePortFilter===v?'selected':'')+'>Porta '+this.escape(v)+'</option>').join("")+'</select>'+
-          '<select data-inventory-filter="vlan"><option value="all">Todas as VLANs</option>'+[...new Set(macRows.map(e=>String(e.vlan||"")))].sort().map(v=>'<option value="'+this.escape(v)+'" '+(this.deviceVlanFilter===v?'selected':'')+'>VLAN '+this.escape(v)+'</option>').join("")+'</select>'+
-          '<select data-inventory-filter="vendor"><option value="all">Todos os fabricantes</option>'+[...new Set(macRows.map(e=>e.vendor||"Desconhecido"))].sort().map(v=>'<option value="'+this.escape(v)+'" '+(this.deviceVendorFilter===v?'selected':'')+'>'+this.escape(v)+'</option>').join("")+'</select></div><p class="muted">'+matches.length+' registros filtrados</p>'
-          +'<div class="scroll"><table><thead><tr><th>Dispositivo / MAC</th><th>Porta</th><th>VLAN</th><th>Fabricante / classificação</th><th>Primeira observação</th><th>Última observação</th></tr></thead><tbody>'
-          +matches.map(e=>'<tr><td><button class="mac-name-button" data-name-mac="'+this.escape(sw.id)+'" data-mac="'+this.escape(e.mac)+'" title="Editar nome do dispositivo">'+this.escape(this.pref(sw,"devices",e.mac,"Nomear"))+'</button><small>'+this.escape(e.mac)+'</small></td><td>'+this.escape(this.pref(sw,"ports",String(e.port),"Porta "+e.port))+'</td><td>'+this.escape(e.vlan)+'</td><td>'+this.escape(e.vendor||e.classification)+'</td><td>'+stamp(e.first_seen)+'</td><td>'+stamp(e.last_seen)+'</td></tr>').join('')
-          +'</tbody></table></div><p class="footnote">Exibindo até 200 registros recentes do histórico do switch. MACs administrados localmente não permitem atribuição confiável por OUI.</p></section>';
+          +'<div class="inventory-filters"><label>Pesquisar<input data-mac-setting="query" data-switch-id="'+this.escape(sw.id)+'" type="search" placeholder="MAC, nome, fabricante" value="'+this.escape(filter.query)+'"></label>'+
+          '<label>Porta<select data-mac-setting="port" data-switch-id="'+this.escape(sw.id)+'"><option value="all">Todas as portas</option>'+[...new Set(macRows.map(e=>String(e.port||"")))].sort((a,b)=>Number(a)-Number(b)).map(v=>'<option value="'+this.escape(v)+'" '+(filter.port===v?'selected':'')+'>Porta '+this.escape(v)+'</option>').join("")+'</select></label>'+
+          '<label>VLAN<select data-mac-setting="vlan" data-switch-id="'+this.escape(sw.id)+'"><option value="all">Todas as VLANs</option>'+[...new Set(macRows.map(e=>String(e.vlan||"")))].sort().map(v=>'<option value="'+this.escape(v)+'" '+(filter.vlan===v?'selected':'')+'>VLAN '+this.escape(v)+'</option>').join("")+'</select></label>'+
+          '<label>Fabricante<select data-mac-setting="vendor" data-switch-id="'+this.escape(sw.id)+'"><option value="all">Todos os fabricantes</option>'+[...new Set(macRows.map(e=>e.vendor||"Desconhecido"))].sort().map(v=>'<option value="'+this.escape(v)+'" '+(filter.vendor===v?'selected':'')+'>'+this.escape(v)+'</option>').join("")+'</select></label>'+
+          '<label>Por página<select data-mac-setting="page_size" data-switch-id="'+this.escape(sw.id)+'">'+[25,50,100,200].map(n=>'<option value="'+n+'" '+(filter.page_size===n?'selected':'')+'>'+n+'</option>').join("")+'</select></label>'+
+          '<label>Altura<select data-mac-setting="height" data-switch-id="'+this.escape(sw.id)+'">'+[280,440,600,800].map(n=>'<option value="'+n+'" '+(filter.height===n?'selected':'')+'>'+n+' px</option>').join("")+'</select></label>'+
+          '<button class="history-action" data-mac-reset="'+this.escape(sw.id)+'">Limpar filtros</button></div>'+
+          '<p class="muted" role="status">'+matches.length+' registros encontrados · Página '+page+' de '+maxPage+'</p>'
+          +'<div class="scroll mac-table-scroll" style="max-height:'+Number(filter.height)+'px" tabindex="0" aria-label="Tabela de dispositivos, role para navegar"><table><thead><tr><th>Dispositivo / MAC</th><th>Porta</th><th>VLAN</th><th>Fabricante / classificação</th><th>Primeira observação</th><th>Última observação</th></tr></thead><tbody>'
+          +visible.map(e=>'<tr><td><button class="mac-name-button" data-name-mac="'+this.escape(sw.id)+'" data-mac="'+this.escape(e.mac)+'" title="Editar nome do dispositivo">'+this.escape(this.pref(sw,"devices",e.mac,"Nomear"))+'</button><small>'+this.escape(e.mac)+'</small></td><td>'+this.escape(this.pref(sw,"ports",String(e.port),"Porta "+e.port))+'</td><td>'+this.escape(e.vlan)+'</td><td>'+this.escape(e.vendor||e.classification)+'</td><td>'+stamp(e.first_seen)+'</td><td>'+stamp(e.last_seen)+'</td></tr>').join('')
+          +'</tbody></table></div><div class="mac-pager"><button class="history-action" data-mac-page="'+this.escape(sw.id)+'" data-page="'+(page-1)+'" '+(page<=1?'disabled':'')+'>Anterior</button><span>Página '+page+' / '+maxPage+'</span><button class="history-action" data-mac-page="'+this.escape(sw.id)+'" data-page="'+(page+1)+'" '+(page>=maxPage?'disabled':'')+'>Próxima</button></div><p class="footnote">Exibindo até 200 registros recentes do histórico do switch. MACs administrados localmente não permitem atribuição confiável por OUI.</p></section>';
       }
       else if(this.tab === "topology") body += '<section class="card"><h3>Mapa lógico · edição de posições</h3><p class="section-subtitle">Organização visual personalizável; conexões representam MACs aprendidos, não enlaces físicos confirmados.</p>'+this.topologyBoard(sw)+'<details><summary>Visualização automática por porta</summary>'+this.topologyMap(sw)+'</details></section>';
       else if(this.tab === "protection") {
