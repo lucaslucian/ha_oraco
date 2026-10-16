@@ -27,6 +27,7 @@ const {chromium}=require("playwright");
           recent_changes:[],oui:{prefix_count:0},endpoint_catalog:[{key:"sfp",path:"/transceiver.cgi",interval_seconds:60,description:"Diagnóstico SFP+"}]
         }]};
         const details={};
+        const titleScale=parseFloat(window.getComputedStyle(panel.shadowRoot.querySelector("h1")||panel.shadowRoot.host).fontSize);
         for(const tab of ["mac","endpoints","services","sfp"]){
           panel.tab=tab;panel.render();
           const root=panel.shadowRoot;
@@ -44,10 +45,11 @@ const {chromium}=require("playwright");
         modalPanel.render();
         const close=modalPanel.shadowRoot.querySelector("[data-close-audit]");
         const rect=close.getBoundingClientRect();
-        return {bodyWidth:document.documentElement.scrollWidth,viewport:window.innerWidth,
+        return {fontPx:titleScale,bodyWidth:document.documentElement.scrollWidth,viewport:window.innerWidth,
                 closeWidth:rect.width,closeHeight:rect.height,
                 outlineClose:!!close.querySelector("svg"),details};
       });
+      assert(metrics.fontPx>=30,"Accessible text scale not applied: "+metrics.fontPx);
       assert(metrics.bodyWidth<=metrics.viewport+3,
         "Horizontal page overflow at "+width+"px: "+JSON.stringify(metrics));
       assert(metrics.closeWidth>=36 && metrics.closeHeight>=36,
