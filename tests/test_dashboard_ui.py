@@ -109,7 +109,7 @@ def test_new_read_only_tabs_and_saved_filters_are_wired():
     for feature in ("refreshDdmi(", "data-ddmi-refresh", "endpointDocs(",
                     "networkServices(", "data-endpoint-select",
                     "data-mac-setting", "data-mac-page", "data-mac-reset",
-                    "fontScale", "data-font-scale", "zoom:",
+                    "fontScale", "data-font-scale", "--hora-scale",
                     "mac-table-scroll", "aria-label"):
         assert feature in js
     panel=(ROOT/"panel.py").read_text(encoding="utf-8")
