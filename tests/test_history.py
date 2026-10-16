@@ -555,3 +555,57 @@ def test_byte_totals_survive_missing_instantaneous_rates():
         assert (await db.period_totals("1",1))["rx_bytes"]==3000
     with TemporaryDirectory() as root:
         asyncio.run(scenario(root))
+
+
+def test_operational_stp_changes_do_not_create_configuration_events():
+    async def scenario(root):
+        db=load().HistoryDatabase(FakeHass(root),"stp_audit")
+        await db.initialize()
+        before={"ports":{"1":{
+            "port":"1","state":"Forwarding","role":"Designated",
+            "path_cost_config":"Auto","path_cost_actual":"17000",
+            "priority":"128","p2p_config":"Auto","p2p_actual":"True",
+            "edge_config":"Auto","edge_actual":"False"}}}
+        await db.record_snapshot("stp_ports",before)
+        after={"ports":{"1":{**before["ports"]["1"],
+            "state":"Blocking","role":"Alternate",
+            "path_cost_actual":"999","p2p_actual":"False","edge_actual":"True"}}}
+        await db.record_snapshot("stp_ports",after)
+        items=await db.snapshot_history("stp_ports")
+        assert items[0]["checks"]==2 and items[0]["changes"]==1
+        assert "state" not in items[0]["events"][0]["data"]["ports"]["1"]
+        await db.record_snapshot("stp_ports",{"ports":{"1":{**after["ports"]["1"],"priority":"64"}}})
+        assert (await db.snapshot_history("stp_ports"))[0]["changes"]==2
+        config={"status":"Enabled","enabled":True,"version":"RSTP",
+                "priority":"32768","root_port":"2","root_path_cost":"1500"}
+        await db.record_snapshot("stp_global",config)
+        await db.record_snapshot("stp_global",{**config,"root_port":"3",
+                                                "root_path_cost":"3000"})
+        assert (await db.snapshot_history("stp_global"))[0]["changes"]==1
+        await db.record_snapshot("stp_global",{**config,"priority":"4096"})
+        assert (await db.snapshot_history("stp_global"))[0]["changes"]==2
+    with TemporaryDirectory() as root:
+        asyncio.run(scenario(root))
+
+
+def test_legacy_operational_stp_snapshot_does_not_trigger_migration_noise():
+    async def scenario(root):
+        db=load().HistoryDatabase(FakeHass(root),"stp_legacy")
+        await db.initialize()
+        import json, hashlib
+        from sqlite3 import connect
+        from datetime import datetime,timezone
+        legacy={"ports":{"3":{"port":"3","priority":"128","state":"Forwarding",
+                               "role":"Designated","path_cost_actual":"123"}}}
+        encoded=json.dumps(legacy,sort_keys=True)
+        with connect(db.path) as con:
+            con.execute("INSERT INTO snapshots VALUES(?,?,?,?,?)",(
+                "stp_legacy","stp_ports",datetime.now(timezone.utc).isoformat(),
+                hashlib.sha256(encoded.encode()).hexdigest(),encoded))
+        await db.record_snapshot("stp_ports",{"ports":{"3":{
+            "port":"3","priority":"128","state":"Blocking","role":"Alternate",
+            "path_cost_actual":"900"}}})
+        rows=await db.snapshot_history("stp_ports")
+        assert len(rows[0]["events"])==1
+    with TemporaryDirectory() as root:
+        asyncio.run(scenario(root))
