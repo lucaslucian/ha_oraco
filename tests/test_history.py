@@ -524,3 +524,34 @@ def test_legacy_unknown_sfp_telemetry_never_triggers_new_snapshot():
         assert len(events)==1  # old record retained, no new artificial event
     with TemporaryDirectory() as root:
         asyncio.run(scenario(root))
+
+
+def test_byte_totals_survive_missing_instantaneous_rates():
+    async def scenario(root):
+        db=load().HistoryDatabase(FakeHass(root),"counter_only")
+        await db.initialize()
+        # Both rates are absent: no artificial zero-bps chart sample.
+        await db.record_traffic({"1":{"speed":"1G","rx_bytes":10_000,
+                                       "tx_bytes":20_000}})
+        await asyncio.sleep(0.02)
+        await db.record_traffic({"1":{"speed":"1G","rx_bytes":12_000,
+                                       "tx_bytes":24_000}})
+        per_port=await db.period_totals("1",1)
+        whole=await db.period_totals("__total__",1)
+        assert per_port=={"rx_bytes":2000,"tx_bytes":4000}
+        assert whole==per_port
+        assert (await db.daily_totals("1"))[0]["rx_bytes"]==2000
+        assert await db.series("1",1)==[]
+        # Later rate measurements must increment the bucket's sample count
+        # rather than treating earlier counter-only observations as zero rates.
+        await asyncio.sleep(0.02)
+        await db.record_traffic({"1":{"speed":"1G","rx_bps":4000,
+                                       "tx_bps":6000,"rx_bytes":13_000,
+                                       "tx_bytes":25_000}})
+        samples=await db.series("1",720)
+        assert len(samples)==1
+        assert samples[0]["rx"]==4000
+        assert samples[0]["tx"]==6000
+        assert (await db.period_totals("1",1))["rx_bytes"]==3000
+    with TemporaryDirectory() as root:
+        asyncio.run(scenario(root))
