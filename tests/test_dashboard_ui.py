@@ -81,3 +81,24 @@ def test_snapshot_history_errors_are_structured_and_retryable():
     manifest=(ROOT/"manifest.json").read_text(encoding="utf-8")
     assert '?v=0.4.37' in panel
     assert '"version": "0.4.37"' in manifest
+
+
+def test_audit_modal_alignment_close_icon_and_safe_events():
+    js=(ROOT/"frontend"/"ha-oraco-panel.js").read_text(encoding="utf-8")
+    assert 'aria-label="Fechar histórico" title="Fechar histórico"><svg' in js
+    assert ".audit-close svg{display:block;pointer-events:none}" in js
+    assert "align-items:center;justify-content:center" in js
+    assert "const index=all.indexOf(ev);" in js
+    assert "all.findIndex(item=>item.timestamp===ev.timestamp)" not in js
+    assert 'this.formatAuditDate(ev.timestamp,true)' in js
+    assert "disconnectedCallback()" in js
+    assert 'event.key==="Escape"' in js
+    assert 'Resposta de histórico inválida' in js
+    assert 'grid-template-columns:minmax(190px,235px) minmax(0,1fr)' in js
+
+
+def test_panel_cache_bump_matches_manifest():
+    panel=(ROOT/"panel.py").read_text(encoding="utf-8")
+    manifest=(ROOT/"manifest.json").read_text(encoding="utf-8")
+    assert '?v=0.4.38' in panel
+    assert '"version": "0.4.38"' in manifest
