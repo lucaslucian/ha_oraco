@@ -113,3 +113,37 @@ def test_failed_preference_save_does_not_mutate_in_memory_data(monkeypatch):
         assert prefs.data==before
         assert hass.saved==before
     asyncio.run(scenario())
+
+
+def test_mac_view_preferences_and_font_scale_validation(monkeypatch):
+    Preferences=load(monkeypatch)
+    async def scenario():
+        hass=types.SimpleNamespace(saved={})
+        prefs=Preferences(hass)
+        await prefs.load()
+        good={"query":"camera","port":"1","vlan":"20","vendor":"ODM",
+              "page_size":25,"height":440}
+        await prefs.set_item("switch","options","mac_view",good)
+        await prefs.set_item("switch","options","font_scale",1.2)
+        restored=Preferences(hass)
+        await restored.load()
+        assert restored.for_switch("switch")["options"]["mac_view"]==good
+        assert restored.for_switch("switch")["options"]["font_scale"]==1.2
+        for field,value in (
+            ("page_size",500),("height",10000),("query","x"*500),("vendor",[]),
+        ):
+            bad={**good,field:value}
+            try:
+                await prefs.set_item("switch","options","mac_view",bad)
+            except ValueError:
+                pass
+            else:
+                raise AssertionError(f"Invalid MAC view {field} accepted")
+        for invalid in ("120%",-1,0,1.05,True):
+            try:
+                await prefs.set_item("switch","options","font_scale",invalid)
+            except ValueError:
+                pass
+            else:
+                raise AssertionError(f"Invalid scale {invalid!r} accepted")
+    asyncio.run(scenario())
