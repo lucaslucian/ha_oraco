@@ -123,3 +123,48 @@ def test_igmp_membership_uses_named_columns_and_safe_port_lists():
     assert parser._port_numbers("invalid Port 99 maybe")==[]
     assert parser._port_numbers("1-100")==[]
     assert parser._port_numbers("Port 1, 9")==["1","9"]
+
+
+def test_oem_multiline_tables_and_unknown_global_state():
+    a=load("advanced")
+    # Some OEM pages have a decorative title row before actual headings.
+    dhcp='''<table><tr><td colspan="2">DHCP Snooping Status</td></tr>
+    <tr><th>Interface</th><th>Trust State</th></tr>
+    <tr><td>Port 9</td><td>Untrusted</td></tr>
+    <tr><td>Port 1</td><td>Trusted</td></tr></table>'''
+    result=a.parse_dhcp(dhcp)
+    assert result["enabled"] is None
+    assert result["per_port"]["1"]["trusted"] is True
+    assert result["per_port"]["9"]["trusted"] is False
+    assert result["trust_source"]=="explicit_status_table"
+    igmp='''<table><tr><th colspan="3">IGMP Multicast Groups</th></tr>
+    <tr><th>Group IP</th><th>VLAN ID</th><th>Member Ports</th></tr>
+    <tr><td>239.1.2.3</td><td>2000</td><td>Port 1, 9</td></tr>
+    <tr><td>239.1.2.4</td><td>1</td><td>CPU</td></tr></table>'''
+    data=a.parse_igmp(igmp)
+    assert data["enabled"] is None
+    assert len(data["groups"])==2
+    assert data["per_port"]["9"]==[{"group":"239.1.2.3","vlan":"2000"}]
+    assert data["groups_unmapped"]==1
+
+
+def test_configuration_form_cannot_invent_dhcp_trust_or_igmp_membership():
+    a=load("advanced")
+    form='''<input name="enable_dhcpsnp" checked>
+      <form action="dhcp_snooping.cgi?page=static">
+      <input class="chkp" checked id="t1"><label for="t1">Port 1</label>
+      </form>'''
+    assert not a.parse_dhcp(form)["trust_status_available"]
+    igmp='''<input name="enable_igmp" checked>
+      <table><tr><td>IP Address</td><td>Port</td><td>VLAN ID</td></tr>
+      <tr><td>239.2.3.4</td><td>Port 2</td><td>20</td></tr></table>'''
+    groups=a.parse_igmp(igmp)
+    assert groups["per_port"]["2"][0]["group"]=="239.2.3.4"
+    for method,invalid in ((a.parse_dhcp,"<html>Please login</html>"),
+                           (a.parse_igmp,"<html>Please login</html>")):
+        try:
+            method(invalid)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("Login page must not be accepted as monitoring data")
