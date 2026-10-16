@@ -173,8 +173,8 @@ O relatório distingue bugs confirmados de recomendações ainda não implementa
 - **Tabela MAC ampliada:** pesquisa, filtros de porta/VLAN/fabricante, escolha
   de linhas por página (25/50/100/200), altura da lista e navegação paginada.
   Preferências são persistidas por switch no armazenamento Home Assistant; a
-  fonte atual ainda limita a consulta aos **200 registros mais recentes** do
-  inventário persistente — paginação é local, não busca todo o banco.
+  fonte atual consultava apenas **200 registros mais recentes** na versão 0.4.40;
+  desde a 0.4.41, a consulta completa é paginada diretamente no SQLite.
 - **Endpoints:** nova aba com caminhos de leitura aprovados, ciclo planejado,
   último diagnóstico, campos encontrados e prévia dos dados já presentes no
   cache. A aba não envia CGI adicionais.
@@ -191,6 +191,30 @@ O relatório distingue bugs confirmados de recomendações ainda não implementa
 HTML do modelo/firmware usado. O teste com fixtures confirma somente formatos
 reconhecidos, não comprova suporte em qualquer outro firmware. Nenhuma escrita
 de configuração, reinicialização ou alteração de firmware foi adicionada.
+
+## Inventário completo e diagnóstico OEM (0.4.41)
+
+A aba **Dispositivos** agora consulta o inventário MAC diretamente no SQLite:
+o servidor aplica pesquisa por MAC, porta, VLAN, fabricante, classificação
+e nomes personalizados, executa contagem total, paginação (25/50/100/200
+linhas) e fornece as opções de filtro considerando todos os registros do
+switch. Os 200 MACs que já acompanham o painel geral continuam servindo
+como prévia caso o SQLite esteja indisponível. A tabela de histórico completa
+**não** recebe retenção automática: isso preserva os registros existentes.
+
+O endpoint WebSocket `ha_oraco/mac_inventory` exige usuário administrador,
+recebe `entry_id`, `page`, `page_size`, `query`, `port`, `vlan` e `vendor`
+e devolve `items`, `total`, `page`, `pages`, `page_size` e `filters`.
+Parâmetros são validados e enviados ao SQLite por consultas parametrizadas.
+Não são aceitos fragmentos SQL do navegador.
+
+O monitoramento DHCP/IGMP reconhece também tabelas OEM com cabeçalhos
+precedidos por títulos, campos alternativos de endereço de grupo e páginas
+sem checkbox global (situação mostrada como **Não informado**, jamais como
+desativado). Grupos cujas portas não podem ser interpretadas continuam
+visíveis como grupos, mas não são atribuídos a portas por suposição.
+**A compatibilidade com o firmware real ainda depende de HTML coletado
+na sua instalação.** Nenhum recurso de alteração do switch foi adicionado.
 
 ## Desenvolvimento e testes
 

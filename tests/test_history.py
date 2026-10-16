@@ -609,3 +609,52 @@ def test_legacy_operational_stp_snapshot_does_not_trigger_migration_noise():
         assert len(rows[0]["events"])==1
     with TemporaryDirectory() as root:
         asyncio.run(scenario(root))
+
+
+def test_sqlite_mac_inventory_pages_all_rows_and_filters_safely():
+    async def scenario(root):
+        factory=load().HistoryDatabase
+        first=factory(FakeHass(root),"switch_A")
+        other=factory(FakeHass(root),"switch_B")
+        await first.initialize()
+        await other.initialize()
+        records=[{
+            "mac":f"00:11:22:{i // 65536:02X}:{i // 256 % 256:02X}:{i % 256:02X}",
+            "vlan":"20" if i%2 else "10",
+            "port":"9" if i%3 else "1",
+            "vendor":"Vendor Two" if i%2 else "Vendor One",
+            "classification":"globally_administered",
+            "first_seen":f"2026-10-01T00:00:00+00:00",
+            "last_seen":f"2026-10-16T00:{i//60:02d}:{i%60:02d}+00:00",
+        } for i in range(270)]
+        await first.record_inventory(records)
+        await other.record_inventory([{**records[0],"mac":"AA:BB:CC:DD:EE:FF"}])
+        one=await first.inventory_page(page=1,page_size=50)
+        six=await first.inventory_page(page=6,page_size=50)
+        assert one["total"]==270 and one["pages"]==6
+        assert len(one["items"])==50 and len(six["items"])==20
+        assert not ({r["mac"] for r in one["items"]} & {r["mac"] for r in six["items"]})
+        assert (await other.inventory_page())["total"]==1
+        assert len(one["filters"]["vendor"])==2
+        scoped=await first.inventory_page(page_size=25,port="9",vlan="20")
+        assert scoped["total"]>0
+        assert all(r["port"]=="9" and r["vlan"]=="20" for r in scoped["items"])
+        alias=records[265]["mac"]
+        named=await first.inventory_page(query="backbone",name_macs=[alias])
+        assert named["total"]==1 and named["items"][0]["mac"]==alias
+        # A query is data, not SQL: wildcard, quotes and OR are not special.
+        injection=await first.inventory_page(query="' OR 1=1 --")
+        assert injection["total"]==0
+        text=await first.inventory_page(query="%")
+        assert text["total"]==0
+        overflow=await first.inventory_page(page=9999)
+        assert overflow["page"]==6 and len(overflow["items"])==20
+        for kwargs in ({"page":0},{"page_size":201},{"query":"x"*81},
+                       {"vendor":[]},{"name_macs":["a"]*201}):
+            try:
+                await first.inventory_page(**kwargs)
+            except ValueError:
+                continue
+            raise AssertionError(f"Invalid pagination argument accepted: {kwargs}")
+    with TemporaryDirectory() as root:
+        asyncio.run(scenario(root))

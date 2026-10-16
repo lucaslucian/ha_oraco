@@ -109,13 +109,18 @@ def parse_sfp(html):
         )
     return out
 
-def _table_headers(table):
+def _table_headers(table, expected=()):
+    """Skip OEM heading/caption rows; columns must actually be labeled."""
     rows=table.find_all("tr")
-    if not rows:
-        return [], []
-    headers=[c.get_text(" ",strip=True).lower()
-             for c in rows[0].find_all(["th","td"],recursive=False)]
-    return headers,rows[1:]
+    for index,row in enumerate(rows[:5]):
+        cells=row.find_all(["th","td"],recursive=False)
+        headers=[c.get_text(" ",strip=True).lower() for c in cells]
+        if len(headers)>=2 and (
+            not expected or all(any(word in name for name in headers)
+                                for word in expected)
+        ):
+            return headers,rows[index+1:]
+    return [],[]
 
 
 def _port_numbers(value):
@@ -135,14 +140,13 @@ def parse_dhcp(html):
     """
     soup = BeautifulSoup(html, "html.parser")
     enabled_field = soup.find("input", attrs={"name": "enable_dhcpsnp"})
-    if enabled_field is None:
-        raise ValueError("DHCP snooping page format not recognized")
+
     trusted={}
     details={}
     for table in soup.find_all("table"):
         if table.find(["input","select","textarea"]):
             continue
-        headers,rows=_table_headers(table)
+        headers,rows=_table_headers(table,("trust",))
         port_col=next((i for i,h in enumerate(headers) if h in ("port","interface","port number")),None)
         trust_col=next((i for i,h in enumerate(headers) if "trust" in h),None)
         if port_col is None or trust_col is None:
@@ -158,22 +162,28 @@ def parse_dhcp(html):
             for number in ports:
                 trusted[number]=trust in ("trusted","yes","enabled","on")
                 details[number]={"trusted":trusted[number],"source":"observed_status_table"}
-    return {"enabled": enabled_field.has_attr("checked"),
+    if enabled_field is None and not details:
+        raise ValueError("DHCP snooping page format not recognized")
+    return {"enabled":enabled_field.has_attr("checked") if enabled_field else None,
             "trusted_ports":trusted,"per_port":details,
-            "trust_status_available":bool(details)}
+            "trust_status_available":bool(details),
+            "trust_source":"explicit_status_table" if details else "not_available"}
 
 
 def parse_igmp(html):
     soup = BeautifulSoup(html, "html.parser")
     field = soup.find("input", attrs={"name": "enable_igmp"})
-    if field is None:
-        raise ValueError("IGMP snooping page format not recognized")
+
     entries=[]
     per_port={}
     for table in soup.find_all("table"):
-        headers,rows=_table_headers(table)
-        ip_col=next((i for i,h in enumerate(headers) if "ip address" in h or "group address" in h),None)
-        vlan_col=next((i for i,h in enumerate(headers) if "vlan" in h),None)
+        if table.find(["input","select","textarea"]):
+            continue
+        headers,rows=_table_headers(table,("port",))
+        ip_col=next((i for i,h in enumerate(headers) if
+            any(word in h for word in ("ip address","ip addr","group address",
+                                       "multicast address","group ip"))),None)
+        vlan_col=next((i for i,h in enumerate(headers) if "vlan" in h or h=="vid"),None)
         port_col=next((i for i,h in enumerate(headers) if "port" in h),None)
         if None in (ip_col,vlan_col,port_col):
             continue
@@ -192,8 +202,12 @@ def parse_igmp(html):
             entries.append(item)
             for number in numbers:
                 per_port.setdefault(number,[]).append({"group":ip,"vlan":vlan})
-    return {"enabled":field.has_attr("checked"),"groups":entries,
-            "per_port":per_port,"per_port_available":bool(per_port)}
+    if field is None and not entries:
+        raise ValueError("IGMP snooping page format not recognized")
+    return {"enabled":field.has_attr("checked") if field else None,
+            "groups":entries,"per_port":per_port,
+            "per_port_available":bool(per_port),
+            "groups_unmapped":sum(1 for item in entries if not item["port_numbers"])}
 
 
 def parse_jumbo(html):

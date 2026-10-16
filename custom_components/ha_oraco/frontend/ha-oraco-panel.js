@@ -22,6 +22,8 @@ class HaOracoPanel extends HTMLElement {
     this.deviceVlanFilter = "all";
     this.deviceVendorFilter = "all";
     this.macPages = {};
+    this.macViews = {};
+    this.macRequestIds = {};
     this.ddmiState = {};
     this.endpointSelection = {};
   }
@@ -62,7 +64,7 @@ class HaOracoPanel extends HTMLElement {
       }
       this.error = null;
     } catch (err) { this.error = this.readableError(err); }
-    finally { this.busy = false; this.render(); this.loadCurrentCharts(true); this.loadSfpTemperature(); this.loadSfpOptics(); this.loadStorageStats(); }
+    finally { this.busy = false; this.render(); this.loadCurrentCharts(true); this.loadSfpTemperature(); this.loadSfpOptics(); this.loadStorageStats(); this.loadMacInventory(true); }
   }
 
   async refreshDdmi(switchId) {
@@ -84,6 +86,35 @@ class HaOracoPanel extends HTMLElement {
   macSettings(sw) {
     const defaults={query:"",port:"all",vlan:"all",vendor:"all",page_size:50,height:440};
     return {...defaults,...(sw.preferences?.options?.mac_view||{})};
+  }
+  async loadMacInventory(force=false) {
+    if(!this._hass||!this.data||this.tab!=="mac")return;
+    for(const sw of this.data.switches||[]){
+      if(!sw?.id)continue;
+      const filter=this.macSettings(sw);
+      const page=Math.max(1,this.macPages[sw.id]||1);
+      const request={type:"ha_oraco/mac_inventory",entry_id:sw.id,page,
+        page_size:filter.page_size,query:filter.query,port:filter.port,
+        vlan:filter.vlan,vendor:filter.vendor};
+      const signature=JSON.stringify(request);
+      if(!force && this.macViews[sw.id]?.signature===signature)return;
+      const token=(this.macRequestIds[sw.id]||0)+1;
+      this.macRequestIds[sw.id]=token;
+      this.macViews[sw.id]={...this.macViews[sw.id],loading:true,signature};
+      this.render();
+      try {
+        const result=await this._hass.connection.sendMessagePromise(request);
+        if(token!==this.macRequestIds[sw.id])continue;
+        if(!result||!Array.isArray(result.items)||!Number.isInteger(result.pages))
+          throw new Error("Resposta MAC inválida");
+        this.macPages[sw.id]=result.page;
+        this.macViews[sw.id]={...result,loading:false,signature};
+      }catch(error){
+        if(token!==this.macRequestIds[sw.id])continue;
+        this.macViews[sw.id]={error:this.readableError(error),loading:false,signature};
+      }
+      this.render();
+    }
   }
   endpointDocs(sw) {
     const catalog=sw.endpoint_catalog||[];
@@ -116,8 +147,8 @@ class HaOracoPanel extends HTMLElement {
     const groups=Array.isArray(igmp?.groups)?igmp.groups:[];
     return '<section class="card"><h3>DHCP snooping e IGMP por porta</h3>'+
       '<p class="section-subtitle">Leitura dos caminhos CGI conhecidos. Estados por porta só aparecem quando confirmados em tabelas com cabeçalhos explícitos.</p>'+
-      '<div class="inventory-stats"><div><small>DHCP snooping</small><strong>'+(!dhcp?"Indisponível":dhcp.enabled?"Ativado":"Desativado")+'</strong></div>'+
-      '<div><small>IGMP snooping</small><strong>'+(!igmp?"Indisponível":igmp.enabled?"Ativado":"Desativado")+'</strong></div>'+
+      '<div class="inventory-stats"><div><small>DHCP snooping</small><strong>'+(!dhcp?"Indisponível":dhcp.enabled===null?"Não informado":dhcp.enabled?"Ativado":"Desativado")+'</strong></div>'+
+      '<div><small>IGMP snooping</small><strong>'+(!igmp?"Indisponível":igmp.enabled===null?"Não informado":igmp.enabled?"Ativado":"Desativado")+'</strong></div>'+
       '<div><small>Grupos IGMP identificados</small><strong>'+groups.length+'</strong></div></div>'+
       '<div class="scroll"><table><thead><tr><th>Porta</th><th>Confiabilidade DHCP</th><th>Grupos IGMP</th></tr></thead><tbody>'+
       ports.map(port=>{
@@ -130,7 +161,8 @@ class HaOracoPanel extends HTMLElement {
       (groups.length?'<h4>Grupos encontrados</h4><div class="scroll"><table><thead><tr><th>Grupo/IP</th><th>VLAN</th><th>Portas informadas</th></tr></thead><tbody>'+
       groups.map(g=>'<tr><td>'+this.escape(g.ip)+'</td><td>'+this.escape(g.vlan)+'</td><td>'+this.escape(g.ports)+'</td></tr>').join('')+
       '</tbody></table></div>':'<p class="muted">Nenhuma associação IGMP confirmada. O firmware pode não fornecer esta tabela.</p>')+
-      '<p class="footnote">Não interpreta formulários de configuração como prova de estado operacional e não modifica confiança de portas nem grupos multicast.</p></section>';
+      '<p class="footnote">Não interpreta formulários de configuração como prova de estado operacional e não modifica confiança de portas nem grupos multicast.'+
+      (igmp?.groups_unmapped?' '+igmp.groups_unmapped+' grupos IGMP não possuem lista de portas interpretável.':'')+'</p></section>';
   }
   loadCurrentCharts(refresh=false) {
     if(!this._hass||!this.data||this.tab!=="history")return;
@@ -572,6 +604,7 @@ class HaOracoPanel extends HTMLElement {
       if(value===null||value==="")delete sw.preferences[category][key];
       else sw.preferences[category][key]=value;
       this.render();
+      if((category==="options"&&key==="mac_view") || (category==="devices"&&this.tab==="mac"))this.loadMacInventory(true);
     } catch(error) {
       this.error="Não foi possível salvar preferência: "+this.readableError(error);
       this.render();
@@ -766,16 +799,25 @@ class HaOracoPanel extends HTMLElement {
       else if(this.tab === "endpoints") body+=this.endpointDocs(sw);
       else if(this.tab === "mac") {
         const macData=sw.mac||{};
-        const macRows=macData.mac_history_entries||macData.mac_entries||[];
+        const view=this.macViews[sw.id];
+        const fallback=macData.mac_history_entries||macData.mac_entries||[];
         const filter=this.macSettings(sw);
-        const matches=macRows.filter(e=>(filter.port==="all"||String(e.port)===filter.port)&&
+        const macRows=view?.filters?view.items||[]:fallback;
+        const matches=view?.items||fallback.filter(e=>
+          (filter.port==="all"||String(e.port)===filter.port)&&
           (filter.vlan==="all"||String(e.vlan)===filter.vlan)&&
           (filter.vendor==="all"||(e.vendor||"Desconhecido")===filter.vendor)&&
           (JSON.stringify(e).toLowerCase().includes(filter.query.toLowerCase())||
-          this.pref(sw,"devices",e.mac,"").toLowerCase().includes(filter.query.toLowerCase())));
-        const maxPage=Math.max(1,Math.ceil(matches.length/filter.page_size));
-        const page=Math.min(maxPage,Math.max(1,this.macPages[sw.id]||1));
-        const visible=matches.slice((page-1)*filter.page_size,page*filter.page_size);
+           this.pref(sw,"devices",e.mac,"").toLowerCase().includes(filter.query.toLowerCase())));
+        const maxPage=view?.pages||Math.max(1,Math.ceil(matches.length/filter.page_size));
+        const page=view?.page||Math.min(maxPage,Math.max(1,this.macPages[sw.id]||1));
+        const visible=view?.items||matches.slice((page-1)*filter.page_size,page*filter.page_size);
+        const available=view?.filters||{
+          port:[...new Set(fallback.map(e=>String(e.port||"")))],
+          vlan:[...new Set(fallback.map(e=>String(e.vlan||"")))],
+          vendor:[...new Set(fallback.map(e=>e.vendor||"Desconhecido"))]
+        };
+        const countFound=view?.total??matches.length;
         const stamp=v=>{if(!v)return '—';const d=new Date(v);return Number.isFinite(d.getTime())?d.toLocaleString('pt-BR'):this.escape(v);};
         const count=sw.oui?.prefix_count||0;
         body+='<section class="card"><h3>Inventário e histórico de dispositivos</h3>'
@@ -785,16 +827,21 @@ class HaOracoPanel extends HTMLElement {
           +'<div><small>Base IEEE</small><strong>'+this.escape(count?count.toLocaleString('pt-BR')+' prefixos':'Não carregada')+'</strong></div></div>'
           +'<p class="section-subtitle">Histórico persistente: primeira e última observação, porta, VLAN e fabricante. OUI atualizado: '+stamp(sw.oui?.last_updated)+'</p>'
           +'<div class="inventory-filters"><label>Pesquisar<input data-mac-setting="query" data-switch-id="'+this.escape(sw.id)+'" type="search" placeholder="MAC, nome, fabricante" value="'+this.escape(filter.query)+'"></label>'+
-          '<label>Porta<select data-mac-setting="port" data-switch-id="'+this.escape(sw.id)+'"><option value="all">Todas as portas</option>'+[...new Set(macRows.map(e=>String(e.port||"")))].sort((a,b)=>Number(a)-Number(b)).map(v=>'<option value="'+this.escape(v)+'" '+(filter.port===v?'selected':'')+'>Porta '+this.escape(v)+'</option>').join("")+'</select></label>'+
-          '<label>VLAN<select data-mac-setting="vlan" data-switch-id="'+this.escape(sw.id)+'"><option value="all">Todas as VLANs</option>'+[...new Set(macRows.map(e=>String(e.vlan||"")))].sort().map(v=>'<option value="'+this.escape(v)+'" '+(filter.vlan===v?'selected':'')+'>VLAN '+this.escape(v)+'</option>').join("")+'</select></label>'+
-          '<label>Fabricante<select data-mac-setting="vendor" data-switch-id="'+this.escape(sw.id)+'"><option value="all">Todos os fabricantes</option>'+[...new Set(macRows.map(e=>e.vendor||"Desconhecido"))].sort().map(v=>'<option value="'+this.escape(v)+'" '+(filter.vendor===v?'selected':'')+'>'+this.escape(v)+'</option>').join("")+'</select></label>'+
+          '<label>Porta<select data-mac-setting="port" data-switch-id="'+this.escape(sw.id)+'"><option value="all">Todas as portas</option>'+available.port.sort((a,b)=>Number(a)-Number(b)).map(v=>'<option value="'+this.escape(v)+'" '+(filter.port===v?'selected':'')+'>Porta '+this.escape(v)+'</option>').join("")+'</select></label>'+
+          '<label>VLAN<select data-mac-setting="vlan" data-switch-id="'+this.escape(sw.id)+'"><option value="all">Todas as VLANs</option>'+available.vlan.sort().map(v=>'<option value="'+this.escape(v)+'" '+(filter.vlan===v?'selected':'')+'>VLAN '+this.escape(v)+'</option>').join("")+'</select></label>'+
+          '<label>Fabricante<select data-mac-setting="vendor" data-switch-id="'+this.escape(sw.id)+'"><option value="all">Todos os fabricantes</option>'+available.vendor.sort().map(v=>'<option value="'+this.escape(v)+'" '+(filter.vendor===v?'selected':'')+'>'+this.escape(v)+'</option>').join("")+'</select></label>'+
           '<label>Por página<select data-mac-setting="page_size" data-switch-id="'+this.escape(sw.id)+'">'+[25,50,100,200].map(n=>'<option value="'+n+'" '+(filter.page_size===n?'selected':'')+'>'+n+'</option>').join("")+'</select></label>'+
           '<label>Altura<select data-mac-setting="height" data-switch-id="'+this.escape(sw.id)+'">'+[280,440,600,800].map(n=>'<option value="'+n+'" '+(filter.height===n?'selected':'')+'>'+n+' px</option>').join("")+'</select></label>'+
           '<button class="history-action" data-mac-reset="'+this.escape(sw.id)+'">Limpar filtros</button></div>'+
-          '<p class="muted" role="status">'+matches.length+' registros encontrados · Página '+page+' de '+maxPage+'</p>'
+          '<p class="muted" role="status">'+
+          (view?.loading?'Consultando inventário SQLite… · ':'')+
+          (view?.error?'Falha ao consultar inventário completo: '+this.escape(view.error)+' · ':'')+
+          countFound+' registros encontrados · Página '+page+' de '+maxPage+'</p>'+
+          (view?.error?'<button class="history-action" data-mac-retry="'+this.escape(sw.id)+'">Tentar novamente</button>':'')
           +'<div class="scroll mac-table-scroll" style="max-height:'+Number(filter.height)+'px" tabindex="0" aria-label="Tabela de dispositivos, role para navegar"><table><thead><tr><th>Dispositivo / MAC</th><th>Porta</th><th>VLAN</th><th>Fabricante / classificação</th><th>Primeira observação</th><th>Última observação</th></tr></thead><tbody>'
           +visible.map(e=>'<tr><td><button class="mac-name-button" data-name-mac="'+this.escape(sw.id)+'" data-mac="'+this.escape(e.mac)+'" title="Editar nome do dispositivo">'+this.escape(this.pref(sw,"devices",e.mac,"Nomear"))+'</button><small>'+this.escape(e.mac)+'</small></td><td>'+this.escape(this.pref(sw,"ports",String(e.port),"Porta "+e.port))+'</td><td>'+this.escape(e.vlan)+'</td><td>'+this.escape(e.vendor||e.classification)+'</td><td>'+stamp(e.first_seen)+'</td><td>'+stamp(e.last_seen)+'</td></tr>').join('')
-          +'</tbody></table></div><div class="mac-pager"><button class="history-action" data-mac-page="'+this.escape(sw.id)+'" data-page="'+(page-1)+'" '+(page<=1?'disabled':'')+'>Anterior</button><span>Página '+page+' / '+maxPage+'</span><button class="history-action" data-mac-page="'+this.escape(sw.id)+'" data-page="'+(page+1)+'" '+(page>=maxPage?'disabled':'')+'>Próxima</button></div><p class="footnote">Exibindo até 200 registros recentes do histórico do switch. MACs administrados localmente não permitem atribuição confiável por OUI.</p></section>';
+          +'</tbody></table></div><div class="mac-pager"><button class="history-action" data-mac-page="'+this.escape(sw.id)+'" data-page="'+(page-1)+'" '+(page<=1?'disabled':'')+'>Anterior</button><span>Página '+page+' / '+maxPage+'</span><button class="history-action" data-mac-page="'+this.escape(sw.id)+'" data-page="'+(page+1)+'" '+(page>=maxPage?'disabled':'')+'>Próxima</button></div><p class="footnote">'+(view?.error?'Exibindo prévia local de até 200 registros. A consulta completa está indisponível.':'Consulta paginada do inventário completo persistido no SQLite.')+
+          ' MACs administrados localmente não permitem atribuição confiável por OUI.</p></section>';
       }
       else if(this.tab === "topology") body += '<section class="card"><h3>Mapa lógico · edição de posições</h3><p class="section-subtitle">Organização visual personalizável; conexões representam MACs aprendidos, não enlaces físicos confirmados.</p>'+this.topologyBoard(sw)+'<details><summary>Visualização automática por porta</summary>'+this.topologyMap(sw)+'</details></section>';
       else if(this.tab === "protection") {
@@ -1178,7 +1225,7 @@ class HaOracoPanel extends HTMLElement {
       const sw=(this.data?.switches||[]).find(x=>x.id===btn.dataset.renamePort);
       if(sw)this.askName(sw,"ports",btn.dataset.number,this.pref(sw,"ports",btn.dataset.number,""));
     }));
-    this.shadowRoot.querySelectorAll("[data-tab]").forEach(el => el.addEventListener("click", () => {this.tab=el.dataset.tab;this.render();this.loadCurrentCharts();this.loadSfpTemperature();this.loadSfpOptics();this.loadStorageStats()}));
+    this.shadowRoot.querySelectorAll("[data-tab]").forEach(el => el.addEventListener("click", () => {this.tab=el.dataset.tab;this.render();this.loadCurrentCharts();this.loadSfpTemperature();this.loadSfpOptics();this.loadStorageStats();this.loadMacInventory()}));
     this.shadowRoot.querySelectorAll("[data-traffic-port]").forEach(btn=>btn.addEventListener("click",()=>{
       this.selectedPort[btn.dataset.switch]=btn.dataset.trafficPort;
       const id=btn.dataset.switch,port=btn.dataset.trafficPort;
@@ -1247,10 +1294,12 @@ class HaOracoPanel extends HTMLElement {
       this.macPages[sw.id]=1;
       this.savePreference(sw,"options","mac_view",view);
     }));
+    this.shadowRoot.querySelectorAll("[data-mac-retry]").forEach(el=>el.addEventListener("click",()=>this.loadMacInventory(true)));
     this.shadowRoot.querySelectorAll("[data-mac-page]").forEach(el=>el.addEventListener("click",()=>{
       const page=Number(el.dataset.page);
-      if(Number.isInteger(page)&&page>=1&&page<=8){
-        this.macPages[el.dataset.macPage]=page;this.render();
+      const max=this.macViews[el.dataset.macPage]?.pages||1;
+      if(Number.isInteger(page)&&page>=1&&page<=max){
+        this.macPages[el.dataset.macPage]=page;this.loadMacInventory(true);
       }
     }));
     this.shadowRoot.querySelectorAll("[data-mac-reset]").forEach(el=>el.addEventListener("click",()=>{

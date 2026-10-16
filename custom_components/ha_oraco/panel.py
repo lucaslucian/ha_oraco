@@ -102,6 +102,39 @@ async def history_data(hass, connection, msg):
         connection.send_result(msg["id"],{"items":result})
 
 @websocket_api.websocket_command({
+    vol.Required("type"): "ha_oraco/mac_inventory",
+    vol.Required("entry_id"): str,
+    vol.Optional("page",default=1): vol.All(vol.Coerce(int),vol.Range(min=1,max=100000)),
+    vol.Optional("page_size",default=50): vol.In([25,50,100,200]),
+    vol.Optional("query",default=""): vol.All(str,vol.Length(max=80)),
+    vol.Optional("port",default="all"): vol.All(str,vol.Length(max=80)),
+    vol.Optional("vlan",default="all"): vol.All(str,vol.Length(max=80)),
+    vol.Optional("vendor",default="all"): vol.All(str,vol.Length(max=80)),
+})
+@websocket_api.require_admin
+@websocket_api.async_response
+async def mac_inventory_data(hass,connection,msg):
+    coordinator=hass.data.get(DOMAIN,{}).get(msg["entry_id"])
+    if not hasattr(coordinator,"client") or coordinator.history_db is None:
+        connection.send_error(msg["id"],"not_found","MAC database unavailable")
+        return
+    preferences=hass.data[DOMAIN]["_dashboard_preferences"].for_switch(msg["entry_id"])
+    names=preferences.get("devices",{})
+    text=msg["query"].strip().casefold()
+    matching=tuple(mac for mac,label in names.items()
+                   if isinstance(label,str) and text and text in label.casefold())[:200]
+    try:
+        result=await coordinator.history_db.inventory_page(
+            page=msg["page"],page_size=msg["page_size"],
+            query=msg["query"],port=msg["port"],vlan=msg["vlan"],
+            vendor=msg["vendor"],name_macs=matching)
+    except ValueError as err:
+        connection.send_error(msg["id"],"invalid_format",str(err))
+        return
+    connection.send_result(msg["id"],result)
+
+
+@websocket_api.websocket_command({
     vol.Required("type"): "ha_oraco/ddmi_refresh",
     vol.Required("entry_id"): str,
 })
@@ -154,6 +187,7 @@ async def register_panel(hass):
     websocket_api.async_register_command(hass, dashboard_data)
     websocket_api.async_register_command(hass, history_data)
     websocket_api.async_register_command(hass, ddmi_refresh)
+    websocket_api.async_register_command(hass, mac_inventory_data)
     websocket_api.async_register_command(hass, save_preference)
     frontend.async_register_built_in_panel(
         hass, "custom",
@@ -162,7 +196,7 @@ async def register_panel(hass):
         frontend_url_path="ha-oraco",
         config={"_panel_custom": {
             "name": "ha-oraco-panel",
-            "module_url": PANEL_URL + "?v=0.4.40",
+            "module_url": PANEL_URL + "?v=0.4.41",
             "embed_iframe": False,
             "trust_external": False,
         }},
