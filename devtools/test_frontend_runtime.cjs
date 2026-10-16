@@ -74,6 +74,38 @@ assert.match(panel.readableError({code:"not_found",message:"History unavailable"
   await Promise.all([first,second]);
   assert.equal(Object.keys(panel.historyRequests).length,0);
   const chart=panel.trafficChart(sw.id,null);
+  // Query beyond the dashboard's 200-row preview, with server-side filters.
+  let lastMacRequest;
+  panel.tab="mac";
+  panel._hass.connection.sendMessagePromise=async request=>{
+    if(request.type==="ha_oraco/mac_inventory"){
+      lastMacRequest=request;
+      return {items:[{mac:"AA:BB:CC:DD:EE:FF",vlan:"20",port:"9",
+        vendor:"Manufacturer",last_seen:"2026-10-16T11:00:00Z"}],
+        total:275,page:request.page,pages:6,page_size:50,
+        filters:{port:["9"],vlan:["20"],vendor:["Manufacturer"]}};
+    }
+    return {items:[]};
+  };
+  await panel.loadMacInventory(true);
+  assert.equal(panel.macViews[sw.id].total,275);
+  assert.equal(panel.macViews[sw.id].pages,6);
+  assert.match(panel.shadowRoot.innerHTML,/275 registros encontrados/);
+  assert.match(panel.shadowRoot.innerHTML,/Próxima/);
+  panel.macPages[sw.id]=6;
+  await panel.loadMacInventory(true);
+  assert.equal(lastMacRequest.page,6);
+  assert.equal(panel.macViews[sw.id].page,6);
+  sw.preferences.options={mac_view:{query:"",port:"9",vlan:"20",
+    vendor:"all",page_size:50,height:440}};
+  await panel.loadMacInventory(true);
+  assert.equal(lastMacRequest.port,"9");
+  assert.equal(lastMacRequest.vlan,"20");
+  assert.match(panel.networkServices({...sw,network:{
+    dhcp:{enabled:null,trust_status_available:false},
+    igmp:{enabled:null,groups:[],groups_unmapped:0}
+  }}),/Não informado/);
+
   assert.equal(typeof chart,"string");
   // Signed optical power limits must work in either order.
   const originalPrompt=context.prompt;
