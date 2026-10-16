@@ -24,7 +24,32 @@ SFP_AUDIT_FIELDS = frozenset((
     "wavelength_nm", "bitrate",
 ))
 
+# Operational STP readings change without any switch configuration edit.
+STP_PORT_CONFIG_FIELDS = frozenset((
+    "port", "path_cost_config", "priority", "p2p_config", "edge_config",
+))
+STP_GLOBAL_CONFIG_FIELDS = frozenset((
+    "status", "enabled", "version", "priority", "max_age",
+    "hello_time", "forward_delay",
+))
+
+
 def _snapshot_state(kind, payload):
+    if kind == "stp_ports":
+        if not isinstance(payload, dict):
+            return {"ports": {}}
+        ports = payload.get("ports", {})
+        if not isinstance(ports, dict):
+            return {"ports": {}}
+        return {"ports": {
+            str(number): {k: v for k, v in item.items()
+                          if k in STP_PORT_CONFIG_FIELDS}
+            for number, item in ports.items() if isinstance(item, dict)
+        }}
+    if kind == "stp_global":
+        if not isinstance(payload, dict):
+            return {}
+        return {k: v for k, v in payload.items() if k in STP_GLOBAL_CONFIG_FIELDS}
     if kind != "sfp":
         return payload
     if not isinstance(payload, dict):
@@ -394,10 +419,9 @@ class HistoryDatabase:
             previous=db.execute("""SELECT checksum,payload FROM snapshots
                 WHERE switch_id=? AND kind=? ORDER BY timestamp DESC LIMIT 1""",
                 (self.key,kind)).fetchone()
-            if previous and kind=="sfp":
+            if previous and kind in ("sfp", "stp_ports", "stp_global"):
                 try:
-                    last=json.loads(previous[1])
-                    last=_snapshot_state(kind,last)
+                    last=_snapshot_state(kind,json.loads(previous[1]))
                     changed=last!=clean
                 except (ValueError,TypeError):
                     changed=previous[0]!=digest
