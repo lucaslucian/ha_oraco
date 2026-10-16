@@ -27,7 +27,6 @@ const {chromium}=require("playwright");
           recent_changes:[],oui:{prefix_count:0},endpoint_catalog:[{key:"sfp",path:"/transceiver.cgi",interval_seconds:60,description:"Diagnóstico SFP+"}]
         }]};
         const details={};
-        const titleScale=parseFloat(window.getComputedStyle(panel.shadowRoot.querySelector("h1")||panel.shadowRoot.host).fontSize);
         for(const tab of ["mac","endpoints","services","sfp"]){
           panel.tab=tab;panel.render();
           const root=panel.shadowRoot;
@@ -43,6 +42,7 @@ const {chromium}=require("playwright");
         const modalPanel=panel;
         modalPanel.snapshotModal={switchId:"test",kind:"sfp",label:"SFP+"};
         modalPanel.render();
+        const titleScale=parseFloat(window.getComputedStyle(panel.shadowRoot.querySelector("h1")).fontSize);
         const close=modalPanel.shadowRoot.querySelector("[data-close-audit]");
         const rect=close.getBoundingClientRect();
         return {fontPx:titleScale,cssScale:window.getComputedStyle(panel).getPropertyValue("--hora-scale"),
