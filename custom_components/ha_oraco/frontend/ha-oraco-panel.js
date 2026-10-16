@@ -604,7 +604,7 @@ class HaOracoPanel extends HTMLElement {
       if(value===null||value==="")delete sw.preferences[category][key];
       else sw.preferences[category][key]=value;
       this.render();
-      if(category==="options"&&key==="mac_view")this.loadMacInventory(true);
+      if((category==="options"&&key==="mac_view") || (category==="devices"&&this.tab==="mac"))this.loadMacInventory(true);
     } catch(error) {
       this.error="Não foi possível salvar preferência: "+this.readableError(error);
       this.render();
@@ -836,10 +836,12 @@ class HaOracoPanel extends HTMLElement {
           '<p class="muted" role="status">'+
           (view?.loading?'Consultando inventário SQLite… · ':'')+
           (view?.error?'Falha ao consultar inventário completo: '+this.escape(view.error)+' · ':'')+
-          countFound+' registros encontrados · Página '+page+' de '+maxPage+'</p>'
+          countFound+' registros encontrados · Página '+page+' de '+maxPage+'</p>'+
+          (view?.error?'<button class="history-action" data-mac-retry="'+this.escape(sw.id)+'">Tentar novamente</button>':'')
           +'<div class="scroll mac-table-scroll" style="max-height:'+Number(filter.height)+'px" tabindex="0" aria-label="Tabela de dispositivos, role para navegar"><table><thead><tr><th>Dispositivo / MAC</th><th>Porta</th><th>VLAN</th><th>Fabricante / classificação</th><th>Primeira observação</th><th>Última observação</th></tr></thead><tbody>'
           +visible.map(e=>'<tr><td><button class="mac-name-button" data-name-mac="'+this.escape(sw.id)+'" data-mac="'+this.escape(e.mac)+'" title="Editar nome do dispositivo">'+this.escape(this.pref(sw,"devices",e.mac,"Nomear"))+'</button><small>'+this.escape(e.mac)+'</small></td><td>'+this.escape(this.pref(sw,"ports",String(e.port),"Porta "+e.port))+'</td><td>'+this.escape(e.vlan)+'</td><td>'+this.escape(e.vendor||e.classification)+'</td><td>'+stamp(e.first_seen)+'</td><td>'+stamp(e.last_seen)+'</td></tr>').join('')
-          +'</tbody></table></div><div class="mac-pager"><button class="history-action" data-mac-page="'+this.escape(sw.id)+'" data-page="'+(page-1)+'" '+(page<=1?'disabled':'')+'>Anterior</button><span>Página '+page+' / '+maxPage+'</span><button class="history-action" data-mac-page="'+this.escape(sw.id)+'" data-page="'+(page+1)+'" '+(page>=maxPage?'disabled':'')+'>Próxima</button></div><p class="footnote">Consulta paginada do inventário completo persistido no SQLite. MACs administrados localmente não permitem atribuição confiável por OUI.</p></section>';
+          +'</tbody></table></div><div class="mac-pager"><button class="history-action" data-mac-page="'+this.escape(sw.id)+'" data-page="'+(page-1)+'" '+(page<=1?'disabled':'')+'>Anterior</button><span>Página '+page+' / '+maxPage+'</span><button class="history-action" data-mac-page="'+this.escape(sw.id)+'" data-page="'+(page+1)+'" '+(page>=maxPage?'disabled':'')+'>Próxima</button></div><p class="footnote">'+(view?.error?'Exibindo prévia local de até 200 registros. A consulta completa está indisponível.':'Consulta paginada do inventário completo persistido no SQLite.')+
+          ' MACs administrados localmente não permitem atribuição confiável por OUI.</p></section>';
       }
       else if(this.tab === "topology") body += '<section class="card"><h3>Mapa lógico · edição de posições</h3><p class="section-subtitle">Organização visual personalizável; conexões representam MACs aprendidos, não enlaces físicos confirmados.</p>'+this.topologyBoard(sw)+'<details><summary>Visualização automática por porta</summary>'+this.topologyMap(sw)+'</details></section>';
       else if(this.tab === "protection") {
@@ -1292,6 +1294,7 @@ class HaOracoPanel extends HTMLElement {
       this.macPages[sw.id]=1;
       this.savePreference(sw,"options","mac_view",view);
     }));
+    this.shadowRoot.querySelectorAll("[data-mac-retry]").forEach(el=>el.addEventListener("click",()=>this.loadMacInventory(true)));
     this.shadowRoot.querySelectorAll("[data-mac-page]").forEach(el=>el.addEventListener("click",()=>{
       const page=Number(el.dataset.page);
       const max=this.macViews[el.dataset.macPage]?.pages||1;
