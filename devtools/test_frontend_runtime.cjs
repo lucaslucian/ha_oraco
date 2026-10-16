@@ -65,6 +65,16 @@ assert.match(panel.readableError({code:"not_found",message:"History unavailable"
   }}};
   await panel.fetchHistory(sw.id,"traffic");
   assert.equal(panel.historyViews[sw.id+"|traffic|__total__|24|sfp"].items.length,1);
+  let pendingResolve,queryCalls=0;
+  panel._hass.connection.sendMessagePromise=()=>{queryCalls++;return new Promise(resolve=>pendingResolve=resolve);};
+  const first=panel.fetchHistory(sw.id,"traffic","1",6);
+  const second=panel.fetchHistory(sw.id,"traffic","1",6);
+  assert.equal(queryCalls,1,"Duplicate historical queries must share the same request");
+  pendingResolve({items:[],total:{rx_bytes:0,tx_bytes:0}});
+  await Promise.all([first,second]);
+  assert.equal(Object.keys(panel.historyRequests).length,0);
+  const chart=panel.trafficChart(sw.id,null);
+  assert.equal(typeof chart,"string");
   // Signed optical power limits must work in either order.
   const originalPrompt=context.prompt;
   const originalSave=panel.savePreference.bind(panel);
