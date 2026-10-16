@@ -36,7 +36,7 @@ const {chromium}=require("playwright");
             status:root.querySelector("main")?.textContent?.includes("HoraInfo")
           };
           if(tab==="mac"){
-            assert(root.querySelector(".mac-table-scroll"),"MAC table absent");
+            if(!root.querySelector(".mac-table-scroll"))throw new Error("MAC table absent");
           }
         }
         const modalPanel=panel;
