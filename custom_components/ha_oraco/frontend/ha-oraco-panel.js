@@ -25,7 +25,23 @@ class HaOracoPanel extends HTMLElement {
     this._hass = value;
     if (!this.data || Date.now() - this.lastFetch > 25000) this.refresh();
   }
-  connectedCallback() { this.render(); this.refresh(); }
+  connectedCallback() {
+    this._modalKeydown = event => {
+      if(event.key==="Escape"&&(this.snapshotModal||this.portModal)){
+        this.snapshotModal=null;this.portModal=null;this.render();
+      }
+    };
+    window.addEventListener("keydown",this._modalKeydown);
+    this.render();this.refresh();
+  }
+  disconnectedCallback() {
+    if(this._modalKeydown)window.removeEventListener("keydown",this._modalKeydown);
+  }
+  formatAuditDate(value,timeOnly=false) {
+    const date=new Date(value);
+    if(!Number.isFinite(date.getTime()))return "Data indisponível";
+    return timeOnly?date.toLocaleTimeString("pt-BR"):date.toLocaleString("pt-BR");
+  }
   async refresh() {
     if (!this._hass || this.busy) return;
     this.busy = true;
@@ -282,6 +298,7 @@ class HaOracoPanel extends HTMLElement {
       if(mode==="sfp_optical")request.metric=kind;
       const result=await this._hass.connection.sendMessagePromise(request);
       if(result?.error)throw result.error;
+      if(!result||typeof result!=="object")throw new Error("Resposta de histórico inválida");
       this.historyViews[key]={...result,items:Array.isArray(result?.items)?result.items:[],loading:false};
     } catch(error) {
       this.historyViews[key]={loading:false,error:this.readableError(error),items:[]};
@@ -409,19 +426,19 @@ class HaOracoPanel extends HTMLElement {
         }).join('');
         const all=days.flatMap(d=>d.events||[]).sort((a,b)=>new Date(b.timestamp)-new Date(a.timestamp));
         const details=events.map(ev=>{
-          const index=all.findIndex(item=>item.timestamp===ev.timestamp);
+          const index=all.indexOf(ev);
           const previous=index>=0?all[index+1]?.data:null;
-          return '<article class="audit-event"><div class="audit-event-heading">Alteração · '+this.escape(new Date(ev.timestamp).toLocaleTimeString('pt-BR'))+'</div>'+this.snapshotDifference(ev.data,previous)+'</article>';
+          return '<article class="audit-event"><div class="audit-event-heading">Alteração · '+this.escape(this.formatAuditDate(ev.timestamp,true))+'</div>'+this.snapshotDifference(ev.data,previous)+'</article>';
         }).join('');
         body=unique.length?
           '<div class="audit-layout"><div class="audit-days">'+list+'</div><section class="audit-content"><h3>'+this.escape(current.split('-').reverse().join('/'))+'</h3><p class="section-subtitle">'+checks+' verificações · '+changes+' alterações</p>'+
-          (selected[0]?.checked_at?'<p class="muted">Última análise: '+this.escape(new Date(selected[0].checked_at).toLocaleString('pt-BR'))+'</p>':'')+
+          (selected[0]?.checked_at?'<p class="muted">Última análise: '+this.escape(this.formatAuditDate(selected[0].checked_at))+'</p>':'')+
           (selected.some(d=>d.events_limited)?'<p class="muted">A visualização carrega somente os 180 eventos mais recentes desta categoria. As contagens diárias abrangem todos os eventos registrados no período de retenção.</p>':'')+
           (details||'<p class="muted">Nenhuma alteração neste dia. O último estado conhecido foi mantido.</p>')+'</section></div>':
           '<p class="muted">Nenhum histórico disponível nos últimos 90 dias.</p>';
       }
     }
-    return '<div class="audit-backdrop" data-modal-backdrop="true"><div class="audit-dialog" role="dialog" aria-modal="true" aria-label="Histórico de '+this.escape(label)+'"><div class="audit-header"><div><h2>Histórico de '+this.escape(label)+'</h2><p>Verificações e mudanças detectadas nos últimos 90 dias</p></div><button class="audit-close" data-close-audit="true" aria-label="Fechar histórico">×</button></div><div class="audit-body">'+body+'</div></div></div>';
+    return '<div class="audit-backdrop" data-modal-backdrop="true"><div class="audit-dialog" role="dialog" aria-modal="true" aria-label="Histórico de '+this.escape(label)+'"><div class="audit-header"><div><h2>Histórico de '+this.escape(label)+'</h2><p>Verificações e mudanças detectadas nos últimos 90 dias</p></div><button class="audit-close" data-close-audit="true" aria-label="Fechar histórico" title="Fechar histórico"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button></div><div class="audit-body">'+body+'</div></div></div>';
   }
   trafficChart(id, port=null) {
     const sw=(this.data?.switches||[]).find(x=>x.id===id);
@@ -856,15 +873,20 @@ class HaOracoPanel extends HTMLElement {
       .audit-dialog{display:flex;flex-direction:column;width:min(100%,1020px);max-height:min(88vh,940px);background:var(--card-background-color);border:1px solid var(--divider-color);border-radius:16px;box-shadow:0 26px 90px rgba(0,0,0,.48);overflow:hidden}
       .audit-header{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:20px 24px;border-bottom:1px solid var(--divider-color)}
       .audit-header h2{font-weight:650;margin:0;font-size:19px}.audit-header p{margin:6px 0 0;color:var(--secondary-text-color);font-size:12px}
-      .audit-close{border:1px solid var(--divider-color);border-radius:9px;width:36px;height:36px;color:var(--primary-text-color);font-size:24px;flex-shrink:0}
+      .audit-close{appearance:none;display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;flex:0 0 40px;width:40px;height:40px;min-width:40px;min-height:40px;padding:0;line-height:1;border:1px solid var(--divider-color);border-radius:10px;color:var(--primary-text-color);background:var(--secondary-background-color);cursor:pointer}
+      .audit-close svg{display:block;pointer-events:none}
+      .audit-close:hover{background:var(--primary-color);color:var(--text-primary-color,#fff)}
+      .audit-close:focus-visible,.audit-day:focus-visible{outline:2px solid var(--primary-color);outline-offset:2px}
+      .audit-header>div{flex:1;min-width:0}
+      .audit-header h2,.audit-header p{line-height:1.4;overflow-wrap:anywhere}
       .audit-body{min-height:130px;overflow:auto;padding:18px 22px}
-      .audit-layout{display:grid;grid-template-columns:minmax(185px,235px) minmax(0,1fr);gap:20px}
-      .audit-days{display:flex;flex-direction:column;gap:6px;max-height:65vh;overflow-y:auto}
-      .audit-day{display:flex;flex-direction:column;gap:5px;text-align:left;padding:12px;border:1px solid var(--divider-color);border-radius:9px;color:var(--primary-text-color);font-size:12px}
+      .audit-layout{display:grid;grid-template-columns:minmax(190px,235px) minmax(0,1fr);gap:20px;align-items:start}
+      .audit-days{display:flex;flex-direction:column;gap:8px;max-height:65vh;overflow-y:auto;overscroll-behavior:contain}
+      .audit-day{display:flex;flex-direction:column;gap:5px;text-align:left;padding:12px;min-width:0;border:1px solid var(--divider-color);border-radius:9px;color:var(--primary-text-color);font-size:12px}
       .audit-day span{font-size:11px;color:var(--secondary-text-color)}
       .audit-day.active{background:var(--secondary-background-color);border-color:var(--primary-color)}
-      .audit-content{min-width:0;max-height:65vh;overflow:auto;padding:5px}
-      .audit-content h3{margin:0 0 12px}
+      .audit-content{min-width:0;max-height:65vh;overflow:auto;padding:4px 2px 16px;overscroll-behavior:contain}
+      .audit-content h3{margin:0 0 8px;line-height:1.35}.audit-content .section-subtitle{margin:0 0 12px;line-height:1.45}.audit-content .muted{line-height:1.5}
       .audit-event{margin-top:18px;border:1px solid var(--divider-color);border-radius:10px;padding:12px;max-width:100%;overflow:hidden}
       .audit-event-heading{font-weight:600;margin-bottom:12px}
       .audit-content .history-fields{display:grid;gap:7px;min-width:0;width:100%}
