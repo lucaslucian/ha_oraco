@@ -8,7 +8,7 @@ def test_interactive_monitoring_sections_are_wired():
     text=(ROOT/"frontend"/"ha-oraco-panel.js").read_text(encoding="utf-8")
     for feature in (
         "portDialog()", "data-open-port", "data-port-history",
-        "data-name-mac", "data-inventory-filter", "data-board-node",
+        "data-name-mac", "data-mac-setting", "data-board-node",
         "data-add-manual", "data-remove-manual", "data-reset-board",
         "data-sfp-limit-metric", "data-compact-toggle", "snapshotDifference(",
         "data-chart-hours-select",
@@ -102,3 +102,18 @@ def test_panel_cache_bump_matches_manifest():
     manifest=(ROOT/"manifest.json").read_text(encoding="utf-8")
     assert '?v=0.4.40' in panel
     assert '"version": "0.4.40"' in manifest
+
+
+def test_new_read_only_tabs_and_saved_filters_are_wired():
+    js=(ROOT/"frontend"/"ha-oraco-panel.js").read_text(encoding="utf-8")
+    for feature in ("refreshDdmi(", "data-ddmi-refresh", "endpointDocs(",
+                    "networkServices(", "data-endpoint-select",
+                    "data-mac-setting", "data-mac-page", "data-mac-reset",
+                    "fontScale", "data-font-scale", "zoom:",
+                    "mac-table-scroll", "aria-label"):
+        assert feature in js
+    panel=(ROOT/"panel.py").read_text(encoding="utf-8")
+    assert 'ha_oraco/ddmi_refresh' in panel
+    assert '@websocket_api.require_admin' in panel
+    assert 'ENDPOINT_CATALOG' in panel
+    assert 'async_register_command(hass, ddmi_refresh)' in panel
