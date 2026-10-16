@@ -1081,6 +1081,12 @@ class HaOracoPanel extends HTMLElement {
       .chart-legend{display:flex;gap:17px;flex-wrap:wrap;font-size:11px;color:var(--secondary-text-color);margin:3px 0 0 22px}
       .traffic-chart{max-height:190px}.card{border-radius:14px}.metric{min-width:0}.metric strong{overflow-wrap:anywhere}
       @media(max-width:950px){.stats{grid-template-columns:repeat(2,minmax(0,1fr))}.columns{grid-template-columns:1fr}}@media(max-width:500px){main{padding:14px}.stats{gap:8px}.card{padding:14px}.metric strong{font-size:20px}}
+      /* Override pixel-sized legacy rules inside Shadow DOM at the end of CSS. */
+      h1{font-size:calc(24px * var(--hora-scale,1))!important}
+      h2{font-size:calc(19px * var(--hora-scale,1))!important}
+      h3{font-size:calc(15px * var(--hora-scale,1))!important}
+      button,input,select,label,td,th,summary,small,.muted,.section-subtitle,.footnote{font-size:calc(12px * var(--hora-scale,1))!important}
+      .metric strong{font-size:clamp(20px,calc(24px * var(--hora-scale,1)),36px)!important}
     </style><main class="${compact?'compact-view':''}"><header><div class="brand-wrap"><h1 class="brand"><img src="/ha_oraco_static/brand/icon.svg" alt="" aria-hidden="true"/> HoraInfo</h1><div class="brand-subtitle">${this.escape(switches.length===1?(switches[0].device?.name||switches[0].device?.model||switches[0].host):switches.length+" equipamentos monitorados")}</div></div><div class="header-actions"><label class="scale-picker">Tamanho do texto<select data-font-scale="true" aria-label="Escala da interface">${[0.9,1,1.1,1.2,1.35].map(n=>'<option value="'+n+'" '+(fontScale===n?'selected':'')+'>'+Math.round(n*100)+'%</option>').join('')}</select></label><button class="refresh" data-compact-toggle="true">${compact?'Exibição normal':'Exibição compacta'}</button><button class="refresh" id="refresh">Atualizar</button></div></header>
     <nav>${tabs.map(([id,label])=>'<button data-tab="'+id+'" class="'+(id===this.tab?"selected":"")+'">'+label+'</button>').join("")}</nav>
     ${body}</main>${this.snapshotDialog()}${this.portDialog()}`;
