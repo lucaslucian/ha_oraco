@@ -120,10 +120,10 @@ def _table_headers(table):
 
 def _port_numbers(value):
     """Accept unambiguous enumerated port lists, never infer unknown formats."""
-    cleaned=re.sub(r"(?i)\\bports?\\b", "", str(value or "")).strip()
-    if not cleaned or not re.fullmatch(r"\\d+(?:\\s*[,;/ ]\\s*\\d+)*",cleaned):
+    cleaned=re.sub(r"(?i)\bports?\b", "", str(value or "")).strip()
+    if not cleaned or not re.fullmatch(r"\d+(?:\s*[,;/ ]\s*\d+)*",cleaned):
         return []
-    return list(dict.fromkeys(str(int(v)) for v in re.findall(r"\\d+",cleaned)
+    return list(dict.fromkeys(str(int(v)) for v in re.findall(r"\d+",cleaned)
                               if 1<=int(v)<=256))
 
 
