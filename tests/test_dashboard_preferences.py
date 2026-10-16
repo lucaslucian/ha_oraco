@@ -68,6 +68,9 @@ def test_rejects_unsafe_or_invalid_preferences(monkeypatch):
         await prefs.load()
         invalid=[
             ("devices","not-a-mac","Camera"),
+            ("devices",":::::::::::::::::","Camera"),
+            ("layout","mac::::::::::::::::::|1",{"x":5,"y":5}),
+            ("infrastructure","safe",{"name":"X","port":"2","macs":[":::::::::::::::::"]}),
             ("ports","../../etc/passwd","uplink"),
             ("layout","mac:E8:4C:4A:21:A8:5D|1",{"x":999,"y":5}),
             ("layout","bad-key",{"x":5,"y":5}),
@@ -87,4 +90,26 @@ def test_rejects_unsafe_or_invalid_preferences(monkeypatch):
             except ValueError:
                 continue
             raise AssertionError(f"Accepted invalid {category}:{key}")
+    asyncio.run(scenario())
+
+
+def test_failed_preference_save_does_not_mutate_in_memory_data(monkeypatch):
+    Preferences=load(monkeypatch)
+    async def scenario():
+        hass=types.SimpleNamespace(saved={})
+        prefs=Preferences(hass)
+        await prefs.load()
+        await prefs.set_item("switch","ports","1","Uplink")
+        before=copy.deepcopy(prefs.data)
+        async def fail(_data):
+            raise OSError("Disk full")
+        prefs.store.async_save=fail
+        try:
+            await prefs.set_item("switch","ports","1","Changed")
+        except OSError:
+            pass
+        else:
+            raise AssertionError("Expected storage failure")
+        assert prefs.data==before
+        assert hass.saved==before
     asyncio.run(scenario())
