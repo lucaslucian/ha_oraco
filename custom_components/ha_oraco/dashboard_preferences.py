@@ -1,6 +1,7 @@
 """Persist dashboard annotations independently of switch observations."""
 import re
 import math
+import copy
 from homeassistant.helpers.storage import Store
 
 class DashboardPreferences:
@@ -22,9 +23,9 @@ class DashboardPreferences:
             raise ValueError("Invalid preference key")
         if category=="ports" and not re.fullmatch(r"\d{1,4}",key):
             raise ValueError("Invalid port")
-        if category=="devices" and not re.fullmatch(r"[0-9A-Fa-f:]{17}",key):
+        if category=="devices" and not re.fullmatch(r"(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}",key):
             raise ValueError("Invalid MAC")
-        if category=="layout" and not re.fullmatch(r"(?:mac:[0-9A-Fa-f:]{17}\|(?:\d{1,4})?|port:\d{1,4}|manual:[a-z0-9-]{1,40})",key):
+        if category=="layout" and not re.fullmatch(r"(?:mac:(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}\|(?:\d{1,4})?|port:\d{1,4}|manual:[a-z0-9-]{1,40})",key):
             raise ValueError("Invalid node")
         if category=="infrastructure" and not re.fullmatch(r"[a-z0-9-]{1,40}",key):
             raise ValueError("Invalid manual node identifier")
@@ -35,7 +36,7 @@ class DashboardPreferences:
                 raise ValueError("Invalid manual node name")
             macs=value.get("macs",[])
             if not isinstance(macs,list) or len(macs)>50 or any(
-                not isinstance(mac,str) or not re.fullmatch(r"[0-9A-Fa-f:]{17}",mac)
+                not isinstance(mac,str) or not re.fullmatch(r"(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}",mac)
                 for mac in macs
             ):
                 raise ValueError("Invalid manually documented MAC group")
@@ -60,9 +61,11 @@ class DashboardPreferences:
                 raise ValueError("Invalid range")
         elif category not in ("thresholds","layout","infrastructure") and (not isinstance(value,str) or len(value)>80):
             raise ValueError("Invalid label")
-        item=self.data.setdefault(entry_id,{}).setdefault(category,{})
+        updated=copy.deepcopy(self.data)
+        item=updated.setdefault(entry_id,{}).setdefault(category,{})
         if value=="" or value is None:
             item.pop(key,None)
         else:
             item[key]=value
-        await self.store.async_save(self.data)
+        await self.store.async_save(updated)
+        self.data=updated
