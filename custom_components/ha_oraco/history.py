@@ -209,13 +209,20 @@ class HistoryDatabase:
         if daily:
             daily.append((self.key,day,"__total__",bytes_rx,bytes_tx))
             increments["__total__"]=(bytes_rx,bytes_tx)
+        # A counter delta can be valid even when the OEM firmware omits one
+        # of the instantaneous rate fields. Ensure byte-only buckets exist;
+        # zero samples must not be reported as measured traffic.
+        measured_ports={row[2] for row in buckets}
+        for number in increments:
+            if number not in measured_ports:
+                buckets.append((self.key,bucket,number,0.0,0.0,0,0.0,0.0))
         with self._connect() as db:
             if raw_rows:
                 db.executemany("INSERT OR REPLACE INTO traffic (switch_id,timestamp,port,rx_bps,tx_bps) VALUES(?,?,?,?,?)",raw_rows)
             db.executemany("""INSERT INTO traffic_5m (switch_id,bucket,port,rx_sum,tx_sum,count,peak_rx,peak_tx) VALUES(?,?,?,?,?,?,?,?)
                 ON CONFLICT(switch_id,bucket,port) DO UPDATE SET
                 rx_sum=rx_sum+excluded.rx_sum,tx_sum=tx_sum+excluded.tx_sum,
-                count=count+1,peak_rx=MAX(peak_rx,excluded.peak_rx),
+                count=count+excluded.count,peak_rx=MAX(peak_rx,excluded.peak_rx),
                 peak_tx=MAX(peak_tx,excluded.peak_tx)""",buckets)
             if baselines:
                 db.executemany("""INSERT INTO traffic_baselines
