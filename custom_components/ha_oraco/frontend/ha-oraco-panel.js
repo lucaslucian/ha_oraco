@@ -147,8 +147,8 @@ class HaOracoPanel extends HTMLElement {
     const groups=Array.isArray(igmp?.groups)?igmp.groups:[];
     return '<section class="card"><h3>DHCP snooping e IGMP por porta</h3>'+
       '<p class="section-subtitle">Leitura dos caminhos CGI conhecidos. Estados por porta só aparecem quando confirmados em tabelas com cabeçalhos explícitos.</p>'+
-      '<div class="inventory-stats"><div><small>DHCP snooping</small><strong>'+(!dhcp?"Indisponível":dhcp.enabled?"Ativado":"Desativado")+'</strong></div>'+
-      '<div><small>IGMP snooping</small><strong>'+(!igmp?"Indisponível":igmp.enabled?"Ativado":"Desativado")+'</strong></div>'+
+      '<div class="inventory-stats"><div><small>DHCP snooping</small><strong>'+(!dhcp?"Indisponível":dhcp.enabled===null?"Não informado":dhcp.enabled?"Ativado":"Desativado")+'</strong></div>'+
+      '<div><small>IGMP snooping</small><strong>'+(!igmp?"Indisponível":igmp.enabled===null?"Não informado":igmp.enabled?"Ativado":"Desativado")+'</strong></div>'+
       '<div><small>Grupos IGMP identificados</small><strong>'+groups.length+'</strong></div></div>'+
       '<div class="scroll"><table><thead><tr><th>Porta</th><th>Confiabilidade DHCP</th><th>Grupos IGMP</th></tr></thead><tbody>'+
       ports.map(port=>{
@@ -161,7 +161,8 @@ class HaOracoPanel extends HTMLElement {
       (groups.length?'<h4>Grupos encontrados</h4><div class="scroll"><table><thead><tr><th>Grupo/IP</th><th>VLAN</th><th>Portas informadas</th></tr></thead><tbody>'+
       groups.map(g=>'<tr><td>'+this.escape(g.ip)+'</td><td>'+this.escape(g.vlan)+'</td><td>'+this.escape(g.ports)+'</td></tr>').join('')+
       '</tbody></table></div>':'<p class="muted">Nenhuma associação IGMP confirmada. O firmware pode não fornecer esta tabela.</p>')+
-      '<p class="footnote">Não interpreta formulários de configuração como prova de estado operacional e não modifica confiança de portas nem grupos multicast.</p></section>';
+      '<p class="footnote">Não interpreta formulários de configuração como prova de estado operacional e não modifica confiança de portas nem grupos multicast.'+
+      (igmp?.groups_unmapped?' '+igmp.groups_unmapped+' grupos IGMP não possuem lista de portas interpretável.':'')+'</p></section>';
   }
   loadCurrentCharts(refresh=false) {
     if(!this._hass||!this.data||this.tab!=="history")return;
