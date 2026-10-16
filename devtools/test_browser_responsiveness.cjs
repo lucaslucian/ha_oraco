@@ -45,11 +45,13 @@ const {chromium}=require("playwright");
         modalPanel.render();
         const close=modalPanel.shadowRoot.querySelector("[data-close-audit]");
         const rect=close.getBoundingClientRect();
-        return {fontPx:titleScale,bodyWidth:document.documentElement.scrollWidth,viewport:window.innerWidth,
+        return {fontPx:titleScale,cssScale:window.getComputedStyle(panel).getPropertyValue("--hora-scale"),
+                cssRule:panel.shadowRoot.querySelector("style").textContent.match(/h1\\{font-size:[^}]+\\}/g)?.at(-1),
+                bodyWidth:document.documentElement.scrollWidth,viewport:window.innerWidth,
                 closeWidth:rect.width,closeHeight:rect.height,
                 outlineClose:!!close.querySelector("svg"),details};
       });
-      assert(metrics.fontPx>=30,"Accessible text scale not applied: "+metrics.fontPx);
+      assert(metrics.fontPx>=30,"Accessible text scale not applied: "+JSON.stringify(metrics));
       assert(metrics.bodyWidth<=metrics.viewport+3,
         "Horizontal page overflow at "+width+"px: "+JSON.stringify(metrics));
       assert(metrics.closeWidth>=36 && metrics.closeHeight>=36,
