@@ -13,6 +13,7 @@ class HaOracoPanel extends HTMLElement {
     this.sfpTemperatureHours = {};
     this.sfpOpticalHours = {};
     this.historyViews = {};
+    this.historyRequests = {};
     this.historyPanels = {};
     this.snapshotModal = null;
     this.snapshotDay = null;
@@ -53,7 +54,7 @@ class HaOracoPanel extends HTMLElement {
         const rx = ports.reduce((sum,p)=>sum+(Number(p.rx_bps)||0),0);
         const tx = ports.reduce((sum,p)=>sum+(Number(p.tx_bps)||0),0);
         this.samples[sw.id] ||= [];
-        this.samples[sw.id].push({rx,tx});
+        this.samples[sw.id].push({rx,tx,timestamp:new Date().toISOString()});
         if(this.samples[sw.id].length>120) this.samples[sw.id].shift();
       }
       this.error = null;
@@ -290,20 +291,32 @@ class HaOracoPanel extends HTMLElement {
   }
   async fetchHistory(switchId,mode,port="__total__",hours=24,kind="sfp") {
     const key=switchId+"|"+mode+"|"+port+"|"+hours+"|"+kind;
-    this.historyViews[key]={loading:true};
+    // A dashboard refresh and a manual selection can request the same range
+    // concurrently. Share the request instead of racing or flooding the HA WS.
+    if(this.historyRequests[key])return this.historyRequests[key];
+    const previous=this.historyViews[key];
+    this.historyViews[key]=previous?.items?.length
+      ? {...previous,refreshing:true,loading:false}
+      : {loading:true,items:[]};
     this.render();
-    try {
-      const request={type:"ha_oraco/history",entry_id:switchId,mode,port,hours};
-      if(mode==="snapshots")request.kind=kind;
-      if(mode==="sfp_optical")request.metric=kind;
-      const result=await this._hass.connection.sendMessagePromise(request);
-      if(result?.error)throw result.error;
-      if(!result||typeof result!=="object")throw new Error("Resposta de histórico inválida");
-      this.historyViews[key]={...result,items:Array.isArray(result?.items)?result.items:[],loading:false};
-    } catch(error) {
-      this.historyViews[key]={loading:false,error:this.readableError(error),items:[]};
-    }
-    this.render();
+    const task=(async()=>{
+      try {
+        const request={type:"ha_oraco/history",entry_id:switchId,mode,port,hours};
+        if(mode==="snapshots")request.kind=kind;
+        if(mode==="sfp_optical")request.metric=kind;
+        const result=await this._hass.connection.sendMessagePromise(request);
+        if(result?.error)throw result.error;
+        if(!result||typeof result!=="object")throw new Error("Resposta de histórico inválida");
+        this.historyViews[key]={...result,items:Array.isArray(result?.items)?result.items:[],loading:false};
+      } catch(error) {
+        this.historyViews[key]={loading:false,error:this.readableError(error),items:[]};
+      } finally {
+        delete this.historyRequests[key];
+        this.render();
+      }
+    })();
+    this.historyRequests[key]=task;
+    return task;
   }
   loadStorageStats(force=false) {
     if(!this._hass||!this.data||this.tab!=="system")return;
