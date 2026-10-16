@@ -153,6 +153,16 @@ Para investigar leituras ausentes, utilize **HoraInfo → Sistema → Saúde das
 - O painel e os comandos WebSocket do dashboard/histórico exigem **usuário administrador**.
 - Inclua `.storage/ha_oraco_history.db` e os dados pertinentes de `.storage/` nos backups do Home Assistant.
 
+## Auditoria de confiabilidade (0.4.39)
+
+A revisão de 16/10/2026 corrigiu lacunas na totalização dos contadores sem
+amostras de velocidade, concorrência no carregamento de gráficos, timestamps
+de sessão, validação e persistência de preferências e falsos eventos de STP.
+O relatório lista também os riscos que continuam abertos e compara as
+funcionalidades com os dois projetos que inspiraram o HoraInfo:
+[**Auditoria técnica e melhorias pendentes**](docs/AUDITORIA-2026-10-16.md).
+O relatório distingue bugs confirmados de recomendações ainda não implementadas.
+
 ## Desenvolvimento e testes
 
 O repositório possui testes automatizados de parsers, páginas CGI reais e malformadas, sessão HTTP, contadores de tráfego, SQLite, inventário e componentes do painel. O fluxo [Offline validation](https://github.com/lucaslucian/ha_oraco/actions/workflows/offline-tests.yml) executa **pytest, validação JavaScript/JSON, Hassfest e verificação HACS**. O indicador no topo reflete o resultado publicado pelo GitHub Actions; uma execução bem-sucedida não substitui os testes no hardware real.
