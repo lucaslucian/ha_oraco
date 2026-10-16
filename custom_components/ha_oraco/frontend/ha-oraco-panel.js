@@ -92,7 +92,7 @@ class HaOracoPanel extends HTMLElement {
     if(!item)return '<section class="card"><p class="muted">Catálogo indisponível nesta versão.</p></section>';
     const endpoint=sw.diagnostics?.endpoints?.[item.key]||{};
     const payload=item.key==="sfp"?sw.sfp?.sfp:item.key==="ports"?sw.ports:
-      item.key==="traffic"?null:item.key==="mac"?sw.mac:sw.network?.[item.key];
+      item.key==="traffic"?sw.ports:item.key==="mac"?sw.mac:sw.network?.[item.key];
     const fields=payload&&typeof payload==="object"?Object.keys(payload):[];
     const status=endpoint.status||((item.key==="ports"||item.key==="traffic")?"Coleta principal":"Ainda não consultado");
     return '<section class="card"><h3>Explorador de endpoints · somente leitura</h3>'+
