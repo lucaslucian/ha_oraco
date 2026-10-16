@@ -162,7 +162,16 @@ class HoracoCoordinator(DataUpdateCoordinator[dict]):
             for name, interval, path, parser in plans:
                 if name not in self.last or now - self.last[name] >= interval:
                     try:
-                        parsed = parser(await self.client.get(path))
+                        if name == "sfp":
+                            # Share the cooldown and lock with the manual DDMI
+                            # command; regular and manual polls must not burst.
+                            async with self._ddmi_lock:
+                                if monotonic() - self._ddmi_last_attempt < 30:
+                                    continue
+                                self._ddmi_last_attempt = monotonic()
+                                parsed = parser(await self.client.get(path))
+                        else:
+                            parsed = parser(await self.client.get(path))
                         self.cache["sfp" if name == "sfp" else "network"][name] = parsed
                         if name == "sfp":
                             self.diagnostics["sfp_fields"] = sorted(parsed)
