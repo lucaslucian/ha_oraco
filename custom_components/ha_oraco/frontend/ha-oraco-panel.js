@@ -719,6 +719,8 @@ class HaOracoPanel extends HTMLElement {
     if (!this.shadowRoot) return;
     const switches = this.data?.switches || [];
     const compact=switches[0]?this.pref(switches[0],"options","compact",false):false;
+    const fontScale=([0.9,1,1.1,1.2,1.35].includes(switches[0]?.preferences?.options?.font_scale))
+      ? switches[0].preferences.options.font_scale : 1;
     const tabs = [["overview","Visão geral"],["ports","Portas"],["history","Histórico"],["sfp","SFP+"],["mac","Dispositivos"],["vlan","VLANs"],["protection","Proteções"],["topology","Mapa de rede"],["system","Sistema"],["services","DHCP / IGMP"],["endpoints","Endpoints"]];
     let body = this.error ? '<section class="card">Não foi possível consultar os dados. '+this.escape(this.error)+'</section>' : "";
     if (!switches.length && !this.error) body = '<section class="card">Nenhum switch configurado ou aguardando dados.</section>';
@@ -861,6 +863,7 @@ class HaOracoPanel extends HTMLElement {
       function table(items) { return '<div class="scroll"><table><thead><tr><th>Interface</th><th>Link</th><th>Velocidade</th><th>RX</th><th>TX</th><th>Pico RX</th><th>Pico TX</th></tr></thead><tbody>'+items.map(row).join("")+'</tbody></table></div>'; }
     }
     this.shadowRoot.innerHTML = `<style>
+      :host{zoom:${fontScale}}
       :host { display:block; min-height:100%; color:var(--primary-text-color); background:var(--primary-background-color); font-family:Roboto,"Arial",sans-serif; }
       *{box-sizing:border-box} main{max-width:1480px;margin:auto;padding:24px;} header{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:22px}
       .brand-wrap{display:flex;flex-direction:column;gap:4px}.brand-subtitle{font-size:12px;color:var(--secondary-text-color);padding-left:50px}.brand{display:flex;align-items:center;gap:12px}.brand img{width:38px;height:38px;object-fit:contain} h1{font-size:24px;font-weight:500;margin:0}h2{font-size:19px;font-weight:500;margin:0}h3{font-size:15px;font-weight:500;margin:0 0 18px}
@@ -899,7 +902,17 @@ class HaOracoPanel extends HTMLElement {
       .compact-view .card{padding:13px;margin-bottom:10px}
       .compact-view .stats{gap:9px}.compact-view .metric strong{font-size:20px}
       .compact-view .optical-item{padding:10px}
-      .inventory-filters{display:flex;flex-wrap:wrap;gap:9px;margin:14px 0}
+      .inventory-filters{display:flex;flex-wrap:wrap;gap:9px;margin:14px 0;align-items:flex-end}
+      .inventory-filters label,.endpoint-picker,.scale-picker{display:flex;flex-direction:column;gap:5px;font-size:12px;color:var(--secondary-text-color)}
+      .mac-table-scroll{overflow:auto;min-height:120px;overscroll-behavior:contain;border:1px solid var(--divider-color);border-radius:9px}
+      .mac-table-scroll th{top:0}
+      .mac-pager{display:flex;gap:12px;align-items:center;justify-content:flex-end;padding:12px 0;flex-wrap:wrap}
+      .mac-pager button:disabled,.history-action:disabled{opacity:.45;cursor:not-allowed}
+      .endpoint-picker select,.scale-picker select{border:1px solid var(--divider-color);border-radius:9px;padding:9px;background:var(--card-background-color);color:var(--primary-text-color);max-width:100%}
+      .endpoint-json{max-height:360px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;padding:14px;background:var(--secondary-background-color);border-radius:8px;font-size:12px}
+      .endpoint-picker{margin-bottom:16px}
+      @media(max-width:720px){.inventory-filters label{width:100%;min-width:0}.inventory-filters input,.inventory-filters select{width:100%;min-width:0}.header-actions{flex-wrap:wrap}.mac-pager{justify-content:center}}
+      @media(max-width:390px){.card{padding:12px}.endpoint-json{font-size:11px}}
       .inventory-filters input,.inventory-filters select{border:1px solid var(--divider-color);border-radius:9px;padding:9px;background:var(--card-background-color);color:var(--primary-text-color);min-width:170px}
       .mac-name-button{padding:3px 0;border:0;color:var(--primary-color);font-weight:600;text-align:left}
       td .mac-name-button+small{display:block;font-size:11px}
@@ -1060,7 +1073,7 @@ class HaOracoPanel extends HTMLElement {
       .chart-legend{display:flex;gap:17px;flex-wrap:wrap;font-size:11px;color:var(--secondary-text-color);margin:3px 0 0 22px}
       .traffic-chart{max-height:190px}.card{border-radius:14px}.metric{min-width:0}.metric strong{overflow-wrap:anywhere}
       @media(max-width:950px){.stats{grid-template-columns:repeat(2,minmax(0,1fr))}.columns{grid-template-columns:1fr}}@media(max-width:500px){main{padding:14px}.stats{gap:8px}.card{padding:14px}.metric strong{font-size:20px}}
-    </style><main class="${compact?'compact-view':''}"><header><div class="brand-wrap"><h1 class="brand"><img src="/ha_oraco_static/brand/icon.svg" alt="" aria-hidden="true"/> HoraInfo</h1><div class="brand-subtitle">${this.escape(switches.length===1?(switches[0].device?.name||switches[0].device?.model||switches[0].host):switches.length+" equipamentos monitorados")}</div></div><div class="header-actions"><button class="refresh" data-compact-toggle="true">${compact?'Exibição normal':'Exibição compacta'}</button><button class="refresh" id="refresh">Atualizar</button></div></header>
+    </style><main class="${compact?'compact-view':''}"><header><div class="brand-wrap"><h1 class="brand"><img src="/ha_oraco_static/brand/icon.svg" alt="" aria-hidden="true"/> HoraInfo</h1><div class="brand-subtitle">${this.escape(switches.length===1?(switches[0].device?.name||switches[0].device?.model||switches[0].host):switches.length+" equipamentos monitorados")}</div></div><div class="header-actions"><label class="scale-picker">Tamanho do texto<select data-font-scale="true" aria-label="Escala da interface">${[0.9,1,1.1,1.2,1.35].map(n=>'<option value="'+n+'" '+(fontScale===n?'selected':'')+'>'+Math.round(n*100)+'%</option>').join('')}</select></label><button class="refresh" data-compact-toggle="true">${compact?'Exibição normal':'Exibição compacta'}</button><button class="refresh" id="refresh">Atualizar</button></div></header>
     <nav>${tabs.map(([id,label])=>'<button data-tab="'+id+'" class="'+(id===this.tab?"selected":"")+'">'+label+'</button>').join("")}</nav>
     ${body}</main>${this.snapshotDialog()}${this.portDialog()}`;
     this.shadowRoot.querySelectorAll("[data-edit-manual]").forEach(btn=>btn.addEventListener("click",event=>{
@@ -1203,11 +1216,34 @@ class HaOracoPanel extends HTMLElement {
       const sw=(this.data?.switches||[]).find(x=>x.id===btn.dataset.nameMac);
       if(sw)this.askName(sw,"devices",btn.dataset.mac,this.pref(sw,"devices",btn.dataset.mac,""));
     }));
-    this.shadowRoot.querySelectorAll("[data-inventory-filter]").forEach(el=>el.addEventListener("change",()=>{
-      if(el.dataset.inventoryFilter==="port")this.devicePortFilter=el.value;
-      if(el.dataset.inventoryFilter==="vlan")this.deviceVlanFilter=el.value;
-      if(el.dataset.inventoryFilter==="vendor")this.deviceVendorFilter=el.value;
-      this.render();
+    this.shadowRoot.querySelectorAll("[data-ddmi-refresh]").forEach(el=>el.addEventListener("click",()=>this.refreshDdmi(el.dataset.ddmiRefresh)));
+    this.shadowRoot.querySelectorAll("[data-endpoint-select]").forEach(el=>el.addEventListener("change",()=>{
+      this.endpointSelection[el.dataset.endpointSelect]=el.value;this.render();
+    }));
+    this.shadowRoot.querySelectorAll("[data-font-scale]").forEach(el=>el.addEventListener("change",()=>{
+      const sw=(this.data?.switches||[])[0];
+      if(sw)this.savePreference(sw,"options","font_scale",Number(el.value));
+    }));
+    this.shadowRoot.querySelectorAll("[data-mac-setting]").forEach(el=>el.addEventListener("change",()=>{
+      const sw=(this.data?.switches||[]).find(x=>x.id===el.dataset.switchId);
+      if(!sw)return;
+      const key=el.dataset.macSetting;
+      const value=["page_size","height"].includes(key)?Number(el.value):el.value;
+      const view={...this.macSettings(sw),[key]:value};
+      this.macPages[sw.id]=1;
+      this.savePreference(sw,"options","mac_view",view);
+    }));
+    this.shadowRoot.querySelectorAll("[data-mac-page]").forEach(el=>el.addEventListener("click",()=>{
+      const page=Number(el.dataset.page);
+      if(Number.isInteger(page)&&page>=1&&page<=8){
+        this.macPages[el.dataset.macPage]=page;this.render();
+      }
+    }));
+    this.shadowRoot.querySelectorAll("[data-mac-reset]").forEach(el=>el.addEventListener("click",()=>{
+      const sw=(this.data?.switches||[]).find(x=>x.id===el.dataset.macReset);
+      if(!sw)return;
+      this.macPages[sw.id]=1;
+      this.savePreference(sw,"options","mac_view",{query:"",port:"all",vlan:"all",vendor:"all",page_size:50,height:440});
     }));
     this.shadowRoot.querySelectorAll("[data-compact-toggle]").forEach(btn=>btn.addEventListener("click",()=>{
       const sw=(this.data?.switches||[])[0];
@@ -1216,7 +1252,7 @@ class HaOracoPanel extends HTMLElement {
     this.shadowRoot.querySelectorAll("[data-retry-history]").forEach(btn=>btn.addEventListener("click",()=>this.fetchHistory(btn.dataset.retryHistory,"traffic",btn.dataset.retryPort,Number(btn.dataset.retryHours))));
     this.shadowRoot.querySelectorAll("[data-refresh-storage]").forEach(btn=>btn.addEventListener("click",()=>this.fetchHistory(btn.dataset.refreshStorage,"storage")));
     this.shadowRoot.getElementById("refresh")?.addEventListener("click",()=>this.refresh());
-    this.shadowRoot.getElementById("mac-filter")?.addEventListener("change",ev=>{this.macFilter=ev.target.value;this.render()});
+
   }
 }
 customElements.define("ha-oraco-panel",HaOracoPanel);
