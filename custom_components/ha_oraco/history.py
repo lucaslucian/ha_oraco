@@ -362,6 +362,73 @@ class HistoryDatabase:
     async def inventory_summary(self):
         return await self.hass.async_add_executor_job(self._inventory_summary)
 
+    def _inventory_page(self, page=1, page_size=50, query="", port="all",
+                        vlan="all", vendor="all", name_macs=()):
+        """Filter and page the complete SQLite inventory, not the 200-row preview."""
+        if type(page) is not int or not 1 <= page <= 100000:
+            raise ValueError("Invalid MAC inventory page")
+        if type(page_size) is not int or page_size not in (25, 50, 100, 200):
+            raise ValueError("Invalid MAC inventory page size")
+        if any(not isinstance(v, str) or len(v) > 80
+               for v in (query, port, vlan, vendor)):
+            raise ValueError("Invalid MAC inventory filter")
+        if not isinstance(name_macs, (list, tuple)) or len(name_macs) > 200:
+            raise ValueError("Invalid MAC label matches")
+        conditions=["switch_id=?"]
+        values=[self.key]
+        if port != "all":
+            conditions.append("port=?")
+            values.append(port)
+        if vlan != "all":
+            conditions.append("vlan=?")
+            values.append(vlan)
+        if vendor != "all":
+            conditions.append("COALESCE(NULLIF(vendor,''),'Desconhecido')=?")
+            values.append(vendor)
+        if query.strip():
+            terms=["instr(lower(COALESCE("+column+",'')),lower(?))>0"
+                   for column in ("mac","vlan","port","vendor","classification")]
+            query_values=[query.strip()]*len(terms)
+            named=[m for m in name_macs if isinstance(m,str) and
+                   len(m)==17 and all(c in "0123456789abcdefABCDEF:"
+                                      for c in m)]
+            if named:
+                terms.append("mac IN ("+",".join("?" for _ in named)+")")
+                query_values.extend(named)
+            conditions.append("("+" OR ".join(terms)+")")
+            values.extend(query_values)
+        where=" AND ".join(conditions)
+        with self._connect() as db:
+            total=db.execute("SELECT COUNT(*) FROM mac_inventory WHERE "+where,
+                             values).fetchone()[0]
+            pages=max(1,(total+page_size-1)//page_size)
+            page=min(page,pages)
+            rows=db.execute(
+                """SELECT mac,vlan,port,vendor,classification,first_seen,last_seen
+                   FROM mac_inventory WHERE """+where+
+                " ORDER BY last_seen DESC,mac ASC,vlan ASC LIMIT ? OFFSET ?",
+                (*values,page_size,(page-1)*page_size)
+            ).fetchall()
+            distinct={}
+            for name in ("port","vlan","vendor"):
+                column="COALESCE(NULLIF(vendor,''),'Desconhecido')" if name=="vendor" else name
+                distinct[name]=[
+                    row[0] for row in db.execute(
+                        "SELECT DISTINCT "+column+" FROM mac_inventory "
+                        "WHERE switch_id=? AND "+column+" IS NOT NULL "
+                        "ORDER BY "+column+" COLLATE NOCASE LIMIT 2000",(self.key,)
+                    )
+                ]
+        fields=("mac","vlan","port","vendor","classification","first_seen","last_seen")
+        return {"items":[dict(zip(fields,row)) for row in rows],
+                "total":total,"page":page,"pages":pages,
+                "page_size":page_size,"filters":distinct}
+
+    async def inventory_page(self, page=1, page_size=50, query="", port="all",
+                             vlan="all", vendor="all", name_macs=()):
+        return await self.hass.async_add_executor_job(
+            self._inventory_page,page,page_size,query,port,vlan,vendor,name_macs)
+
     def _record_snapshot(self, kind, payload):
         allowed=("sfp","vlan_ports","isolation","stp_ports","storm_control","stp_global","aggregation")
         if kind not in allowed:
