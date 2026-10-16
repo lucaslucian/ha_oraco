@@ -79,8 +79,8 @@ def test_snapshot_history_errors_are_structured_and_retryable():
     assert 'value==="[object Object]"' in js
     panel=(ROOT/"panel.py").read_text(encoding="utf-8")
     manifest=(ROOT/"manifest.json").read_text(encoding="utf-8")
-    assert '?v=0.4.38' in panel
-    assert '"version": "0.4.38"' in manifest
+    assert '?v=0.4.39' in panel
+    assert '"version": "0.4.39"' in manifest
 
 
 def test_audit_modal_alignment_close_icon_and_safe_events():
@@ -100,5 +100,5 @@ def test_audit_modal_alignment_close_icon_and_safe_events():
 def test_panel_cache_bump_matches_manifest():
     panel=(ROOT/"panel.py").read_text(encoding="utf-8")
     manifest=(ROOT/"manifest.json").read_text(encoding="utf-8")
-    assert '?v=0.4.38' in panel
-    assert '"version": "0.4.38"' in manifest
+    assert '?v=0.4.39' in panel
+    assert '"version": "0.4.39"' in manifest
