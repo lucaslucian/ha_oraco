@@ -1,0 +1,18 @@
+name: Browser responsive UI
+on:
+  pull_request:
+  push:
+    branches: [main]
+jobs:
+  chromium-responsive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-save playwright
+      - run: npx playwright install --with-deps chromium
+      - run: node --check custom_components/ha_oraco/frontend/ha-oraco-panel.js
+      - run: node devtools/test_browser_responsiveness.cjs
