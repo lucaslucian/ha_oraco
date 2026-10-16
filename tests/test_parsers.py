@@ -91,3 +91,35 @@ def test_sfp_unexpected_html_has_safe_structural_diagnostics():
         assert "rows=1" in str(exc)
     else:
         raise AssertionError("Unexpected SFP HTML should not be interpreted as disconnected module")
+
+
+def test_dhcp_trust_requires_explicit_read_only_status_table():
+    parser=load("advanced")
+    # A static binding form has checkboxes but must not imply trusted ports.
+    form='<input name="enable_dhcpsnp" checked><form action="dhcp_snooping.cgi?page=static"><input class="chkp" id="p1" checked><label for="p1">Port 1</label></form>'
+    data=parser.parse_dhcp(form)
+    assert data["enabled"] is True
+    assert data["trusted_ports"]=={}
+    assert data["trust_status_available"] is False
+    html=form+'''<table><tr><th>Port</th><th>Trusted</th></tr>
+    <tr><td>Port 1</td><td>Yes</td></tr>
+    <tr><td>Port 9</td><td>No</td></tr></table>'''
+    data=parser.parse_dhcp(html)
+    assert data["trusted_ports"]=={"1":True,"9":False}
+    assert data["per_port"]["9"]["source"]=="observed_status_table"
+
+
+def test_igmp_membership_uses_named_columns_and_safe_port_lists():
+    parser=load("advanced")
+    html='''<input name="enable_igmp" checked>
+    <table><tr><th>VLAN</th><th>Group IP Address</th><th>Member Ports</th></tr>
+    <tr><td>20</td><td>239.1.2.3</td><td>Port 1, 9</td></tr>
+    <tr><td>30</td><td>239.5.6.7</td><td>Port 2</td></tr></table>'''
+    data=parser.parse_igmp(html)
+    assert len(data["groups"])==2
+    assert data["groups"][0]["port_numbers"]==["1","9"]
+    assert data["per_port"]["9"]==[{"group":"239.1.2.3","vlan":"20"}]
+    assert data["per_port"]["2"]==[{"group":"239.5.6.7","vlan":"30"}]
+    assert parser._port_numbers("invalid Port 99 maybe")==[]
+    assert parser._port_numbers("1-100")==[]
+    assert parser._port_numbers("Port 1, 9")==["1","9"]
